@@ -6,7 +6,7 @@ Altoholic is optional. Don't run it alongside AdvancedTradeSkillWindow2, which u
 
 ## Using it
 
-Press **Tasks** at the bottom left of the recipe details.
+Press **Queue** at the bottom left of the recipe details.
 
 - **Add** puts the selected recipe on the list, using the amount in the window's quantity box.
 - **Start** crafts the first task on the list that has its materials, as many as it can, and **Stop**
@@ -33,8 +33,8 @@ Hover a row to see which alt has what.
 Something a task earlier on the list makes comes off what's needed, so smelting bars for a later
 task doesn't show those bars as missing.
 
-Your own bags and bank are always live. Mail and alts come from Altoholic, covering characters
-of the same realm and faction, and are as recent as each character's last login. Both can be
+Your own bags and bank are always live. Mail and alts come from Altoholic, covering your other
+characters on the realm, of either faction, since this server lets the factions mail each other, and are as recent as each character's last login. Both can be
 turned off under pfUI's settings, in Thirdparty > Trades.
 
 ## Bank reminder
@@ -46,8 +46,8 @@ of, and says nothing if there's nothing to take. It can be turned off in the sam
 ## Alt reminder
 
 Opening your bank or mailbox also tells you if this character has materials that another
-character's task list needs, with how many to send to whom. It covers characters of the same realm
-and faction, once they've logged in with this version. This character keeps what its own tasks need, and
+character's task list needs, with how many to send to whom. It covers your other characters on the
+realm, of either faction, once they've logged in with this version. This character keeps what its own tasks need, and
 what the alt holds comes off, as Altoholic last saw it. Without Altoholic, the alt counts as having
 none. It can be turned off in the same settings.
 

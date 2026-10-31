@@ -23,7 +23,9 @@ function handlers.Hide(self) self.shown = false end
 function handlers.IsShown(self) return self.shown end
 function handlers.IsVisible(self) return self.shown end
 function handlers.GetRight() return 700 end
-function handlers.GetFrameLevel() return 1 end
+function handlers.GetFrameLevel(self) return rawget(self, "level") or 1 end
+function handlers.SetFrameLevel(self, level) self.level = level end
+function handlers.EnableMouse(self, on) self.mouse = on end
 function handlers.SetPoint(self, point, relative) self.point = { point, relative } end
 function handlers.GetChildren(self) return unpack(self.children) end
 function handlers.CreateFontString()
@@ -40,6 +42,10 @@ function handlers.Disable(self) self.enabled = false end
 function CreateFrame(kind, name, parent)
   local frame = NewFrame(kind, name)
   frame.parent = parent
+  if parent then
+    frame.level = parent:GetFrameLevel() + 1
+    table.insert(parent.children, frame)
+  end
   return frame
 end
 
@@ -284,19 +290,21 @@ Altoholic = { db = { account = { data = DefaultsTable({
 
 plan = M.Plan("Blacksmithing")
 local ore = Row(plan, ORE)
-Eq(plan.alts, 1, "one alt on this realm and faction")
+Eq(plan.alts, 2, "alts of both factions on this realm")
 Eq(ore.mail, 2, "own mail counted, own stale bags not")
-Eq(ore.alts, 15, "alt bags 6, bank 6, mail 3; other faction and stale slot left out")
+Eq(ore.alts, 65, "alt bags 6, bank 6, mail 3, the other faction's 50; stale slot left out")
+Eq(ore.chars[1].name, "Alt", "alts sorted by name")
 Eq(ore.chars[1].bags, 6, "alt bags, with an uncounted single item as 1")
 Eq(ore.chars[1].bank, 6, "Bag100 and bank bags are bank")
 Eq(ore.chars[1].mail, 3, "alt mail")
+Eq(ore.chars[2].name, "Enemy", "the other faction is included")
 Eq(ore.status, "elsewhere", "2 bags + 3 bank + 2 mail + 15 alts covers 20")
 Eq(rawget(Altoholic.db.account.data, "Neutral"), nil, "reading creates nothing")
 
 pfUI_config.trades = { altoholic = "1", mail = "0" }
 ore = Row(M.Plan("Blacksmithing"), ORE)
 Eq(ore.mail, 0, "mail setting off: own mail")
-Eq(ore.alts, 12, "mail setting off: alt mail")
+Eq(ore.alts, 62, "mail setting off: alt mail")
 
 pfUI_config.trades = { altoholic = "0" }
 plan = M.Plan("Blacksmithing")
@@ -387,8 +395,12 @@ Eq(Sends(M.AltMaterials(), "Aaa"), 4, "keeps what its own tasks need")
 carried = { [ORE] = 30 }
 Eq(table.getn(M.AltMaterials()), 0, "nothing spare, nothing offered")
 
-pfUITrades_Tasks["Realm|Alliance"] = { Enemy = OreTask(5) }
-Eq(Sends(M.AltMaterials(), "Enemy"), nil, "the other faction's lists aren't read")
+Reset()
+pfUITrades_Tasks = { ["Realm|Alliance"] = { Enemy = OreTask(5) }, ["Realm|Horde"] = { Main = {} }, ["Other|Horde"] = { Far = OreTask(5) } }
+carried = { [ORE] = 40 }
+Eq(Sends(M.AltMaterials(), "Enemy"), 10, "lists saved by faction move across, and the other faction can be mailed")
+Eq(pfUITrades_Tasks["Realm|Alliance"], nil, "the old key is gone")
+Eq(Sends(M.AltMaterials(), "Far"), nil, "another realm's lists aren't read")
 
 Reset()
 Alt("Aaa", OreTask(5))
@@ -615,8 +627,15 @@ Eq(rawget(CraftListScrollFrame, "offset"), 0, "and so does the craft list")
 TradeSkillFrame.scripts.OnShow()
 pfUITradesButton1.scripts.OnClick()
 local panel = pfUITradesPanel
-Eq(panel ~= nil and panel.shown, true, "the Tasks button opens the panel")
+Eq(panel ~= nil and panel.shown, true, "the Queue button opens the panel")
 Eq(pfUITrades_DB.open, 1, "and that's remembered")
+Eq(panel.mouse, true, "the panel catches clicks on its background")
+TradeSkillFrame.level = 40
+pfUITradesButton1.scripts.OnClick()
+pfUITradesButton1.scripts.OnClick()
+Eq(panel:GetFrameLevel(), 50, "the panel sits above the window")
+Eq(panel.add:GetFrameLevel(), 51, "and its buttons above the panel")
+Eq(panel.taskRows[1]:GetFrameLevel(), 51, "and its rows")
 
 selected = 2
 carried = { [ORE] = 2 }
@@ -630,7 +649,7 @@ Eq(panel.materialRows[1].need.text, "6", "needed")
 Eq(panel.materialRows[1].bags.text, "2", "in bags")
 Eq(panel.materialRows[1].bank.text, "1", "in bank")
 Eq(panel.source.text, "Altoholic: not loaded, alts not counted", "says when alts aren't counted")
-Eq(pfUITradesButton1.label, "Tasks (1)", "the button shows how many")
+Eq(pfUITradesButton1.label, "Queue (1)", "the button shows how many")
 Eq(panel.start.label, "Start", "start label")
 
 panel.start.scripts.OnClick()
@@ -645,14 +664,14 @@ panel.clear.scripts.OnClick()
 Eq(table.getn(M.Tasks("Blacksmithing")), 0, "Clear empties the list")
 Eq(panel.taskRows[1].shown, false, "rows hide")
 
--- The Tasks button sits at the bottom left of the recipe details
-Eq(pfUITradesButton1.point[1], "BOTTOMLEFT", "Tasks button corner")
-Eq(pfUITradesButton1.point[2], TradeSkillDetailScrollFrame, "Tasks button anchor")
-Eq(pfUITradesButton2.point[2], CraftDetailScrollFrame, "Tasks button anchor on the craft window")
+-- The Queue button sits at the bottom left of the recipe details
+Eq(pfUITradesButton1.point[1], "BOTTOMLEFT", "Queue button corner")
+Eq(pfUITradesButton1.point[2], TradeSkillDetailScrollFrame, "Queue button anchor")
+Eq(pfUITradesButton2.point[2], CraftDetailScrollFrame, "Queue button anchor on the craft window")
 
 -- Beast Training has no profession line, so no button or panel
 CraftFrame.scripts.OnShow()
-Eq(pfUITradesButton2.shown, false, "no Tasks button on Beast Training")
+Eq(pfUITradesButton2.shown, false, "no Queue button on Beast Training")
 
 print(passed .. " passed, " .. failures .. " failed")
 os.exit(failures == 0 and 0 or 1)

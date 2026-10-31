@@ -41,12 +41,24 @@ function M.DB()
 end
 
 -- Task lists are account-wide so that characters can see each other's:
--- pfUITrades_Tasks["realm|faction"][character][profession] = { task, ... }
+-- pfUITrades_Tasks[realm][character][profession] = { task, ... }
+-- By realm alone: this server lets the two factions mail each other.
 function M.AccountTasks()
   pfUITrades_Tasks = pfUITrades_Tasks or {}
-  local key = GetRealmName() .. "|" .. UnitFactionGroup("player")
-  pfUITrades_Tasks[key] = pfUITrades_Tasks[key] or {}
-  return pfUITrades_Tasks[key]
+  local realm = GetRealmName()
+  pfUITrades_Tasks[realm] = pfUITrades_Tasks[realm] or {}
+
+  -- lists from when they were also keyed by faction
+  for _, faction in ipairs({ "Alliance", "Horde" }) do
+    local old = realm .. "|" .. faction
+    if pfUITrades_Tasks[old] then
+      for name, professions in pairs(pfUITrades_Tasks[old]) do
+        pfUITrades_Tasks[realm][name] = professions
+      end
+      pfUITrades_Tasks[old] = nil
+    end
+  end
+  return pfUITrades_Tasks[realm]
 end
 
 function M.MyTasks()
@@ -336,10 +348,10 @@ end
 
 -- [ Materials ]
 
--- Reads the other characters of this realm and faction, who are the ones that can mail things
--- here, plus this character's own mail. Their bags and banks only change while they're logged
--- in, and this character's are read live, so its bags and bank are skipped. rawget, because
--- reading a missing entry from Altoholic's database creates it.
+-- Reads the other characters of this realm, of either faction, since this server lets them mail
+-- each other, plus this character's own mail. Their bags and banks only change while they're
+-- logged in, and this character's are read live, so its bags and bank are skipped. rawget,
+-- because reading a missing entry from Altoholic's database creates it.
 local function ReadAltoholic(wanted)
   local found = {}
   if not M.Option("altoholic") then return found, "off" end
@@ -347,11 +359,6 @@ local function ReadAltoholic(wanted)
   local account = Altoholic and Altoholic.db and Altoholic.db.account
   local data = account and rawget(account, "data")
   if not data then return found, "missing" end
-
-  local faction = rawget(data, UnitFactionGroup("player"))
-  local realm = faction and rawget(faction, GetRealmName())
-  local chars = realm and rawget(realm, "char")
-  if not chars then return found, 0 end
 
   local me = UnitName("player")
   local useMail = M.Option("mail")
@@ -363,7 +370,7 @@ local function ReadAltoholic(wanted)
     found[id][name][source] = found[id][name][source] + amount
   end
 
-  for name, c in pairs(chars) do
+  local function ReadCharacter(name, c)
     if name ~= me then
       alts = alts + 1
       for bagName, b in pairs(rawget(c, "bag") or {}) do
@@ -393,6 +400,12 @@ local function ReadAltoholic(wanted)
         end
       end
     end
+  end
+
+  for _, faction in pairs(data) do
+    local realm = rawget(faction, GetRealmName())
+    local chars = realm and rawget(realm, "char")
+    for name, c in pairs(chars or {}) do ReadCharacter(name, c) end
   end
 
   return found, alts

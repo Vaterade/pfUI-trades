@@ -126,7 +126,7 @@ pfUI:RegisterModule("trades", function()
     elseif plan.alts == "missing" then
       panel.source:SetText(T["Altoholic: not loaded, alts not counted"])
     else
-      panel.source:SetText(string.format(T["Altoholic: %d alts on this realm and faction"], plan.alts))
+      panel.source:SetText(string.format(T["Altoholic: %d alts on this realm"], plan.alts))
     end
   end
 
@@ -188,7 +188,7 @@ pfUI:RegisterModule("trades", function()
     local profession = Profession()
     if toggle and profession then
       local count = table.getn(M.Tasks(profession))
-      toggle:SetText(count > 0 and T["Tasks"] .. " (" .. count .. ")" or T["Tasks"])
+      toggle:SetText(count > 0 and T["Queue"] .. " (" .. count .. ")" or T["Queue"])
     end
   end
 
@@ -298,6 +298,7 @@ pfUI:RegisterModule("trades", function()
     panel = CreateFrame("Frame", "pfUITradesPanel", UIParent)
     panel:SetWidth(WIDTH)
     panel:SetHeight(440)
+    panel:EnableMouse(true) -- so clicks on its background don't go through to the world
     CreateBackdrop(panel, nil, nil, .75)
     CreateBackdropShadow(panel)
     panel:Hide()
@@ -368,6 +369,12 @@ pfUI:RegisterModule("trades", function()
     panel.source:SetTextColor(.7, .7, .7)
   end
 
+  -- Moves a frame and everything in it up, keeping their order among themselves.
+  local function Raise(frame, by)
+    frame:SetFrameLevel(frame:GetFrameLevel() + by)
+    for _, child in ipairs({ frame:GetChildren() }) do Raise(child, by) end
+  end
+
   local function SetPanelShown(shown)
     M.DB().open = shown and 1 or nil
     if not shown then
@@ -376,7 +383,11 @@ pfUI:RegisterModule("trades", function()
     end
 
     if not panel then CreatePanel() end
-    panel:SetParent(_G[M.windows[ctx].frame])
+    -- Levels don't follow a new parent reliably, and the buttons have to sit above anything
+    -- else hanging off the window.
+    local frame = _G[M.windows[ctx].frame]
+    panel:SetParent(frame)
+    Raise(panel, frame:GetFrameLevel() + 10 - panel:GetFrameLevel())
     panel.x = nil
     panel:Show()
     Place()
@@ -409,7 +420,7 @@ pfUI:RegisterModule("trades", function()
     local list = _G[name .. "ListScrollFrame"]
     if list and not FauxScrollFrame_GetOffset(list) then FauxScrollFrame_SetOffset(list, 0) end
 
-    local toggle = Button(frame, T["Tasks"], 70, 22, function()
+    local toggle = Button(frame, T["Queue"], 70, 22, function()
       SetPanelShown(not (panel and panel:IsShown()))
     end)
     -- Bottom left of the recipe details, level with Aegis_Exchange's button in the bottom right
