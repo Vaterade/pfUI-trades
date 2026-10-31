@@ -452,30 +452,47 @@ end
 
 -- [ Crafting ]
 
--- Casts the first task that has its materials. Batches advance by themselves: when one has
--- finished, the next starts after a moment, to let the bags catch up.
+-- The client only starts these casts from a click. Called from OnUpdate, DoTradeSkill reaches
+-- the client's cast function (nampower_debug.log shows "Attempt cast") but no cast begins and no
+-- event says so, however long it has been since the last cast. So a queue can't run by itself:
+-- each press of Start casts one batch, and M.Start has to be called from a click.
+local CONFIRM_TIME = 3 -- how long the next cast has to show up before the batch counts as over
+
+local function EndBatch()
+  M.running, M.confirm = nil, nil
+end
+
+-- Casts the first task that has its materials, as many as it can.
 function M.Start(ctx)
   local window = M.windows[ctx]
   local profession = window.Profession()
   if not profession or window.Linked() then return end
 
-  M.wait = nil
   local plan = M.Plan(profession)
 
   for _, task in ipairs(plan.tasks) do
     local count = plan.ready[task]
     if count > 0 then
+      -- before the cast: the client can turn it down from inside the call
+      if window.batch then
+        M.running = { ctx = ctx, profession = profession, task = task, left = count }
+        M.confirm = GetTime() + CONFIRM_TIME
+        M.driver:Show()
+      else
+        EndBatch()
+      end
+
       local started = WithRecipe(window, task.name, function(i) window.Cast(i, count) end)
       if started then
-        M.running = window.batch and { ctx = ctx, profession = profession, task = task, left = count } or nil
         Changed()
         return true
       end
+      EndBatch()
       Say("this character doesn't know " .. task.name .. ", skipping it.")
     end
   end
 
-  M.running = nil
+  EndBatch()
   if table.getn(plan.tasks) == 0 then
     Say("the task list is finished.")
   else
@@ -484,10 +501,10 @@ function M.Start(ctx)
   Changed()
 end
 
--- Stops the queue and the batch in progress.
+-- Stops the batch in progress.
 function M.Stop()
-  local wasCasting = M.running and not M.wait
-  M.running, M.wait = nil, nil
+  local wasCasting = M.running
+  EndBatch()
   if wasCasting then SpellStopCasting() end
   Changed()
 end
@@ -514,16 +531,15 @@ end
 
 local driver = CreateFrame("Frame")
 M.driver = driver
-driver:Hide() -- OnUpdate only runs while waiting to start the next batch
+driver:Hide() -- OnUpdate only runs while waiting for a cast to show up
 
 driver:SetScript("OnUpdate", function()
-  if not M.wait then
-    driver:Hide()
-  elseif GetTime() >= M.wait then
-    M.wait = nil
-    driver:Hide()
-    if M.running then M.Start(M.running.ctx) end
+  if M.confirm and GetTime() >= M.confirm then
+    -- the cast never began or the batch quietly ended early, so don't sit on Stop
+    EndBatch()
+    Changed()
   end
+  if not M.confirm then driver:Hide() end
 end)
 
 -- Any successful cast of a listed recipe counts, so crafting with the window's own Create
@@ -531,6 +547,8 @@ end)
 driver:SetScript("OnEvent", function()
   if event == "UNIT_SPELLCAST_SUCCEEDED" then
     if arg1 ~= "player" then return end
+    if IsRunning(arg3, arg4) then M.confirm = nil end
+
     local profession, task = FindTask(arg3, arg4)
     if not profession then return end
 
@@ -538,12 +556,15 @@ driver:SetScript("OnEvent", function()
     if running and running.task == task then
       running.left = running.left - 1
       if running.left <= 0 then
-        M.wait = GetTime() + 0.6
+        EndBatch()
+      else
+        -- the next craft of the batch should follow at once
+        M.confirm = GetTime() + CONFIRM_TIME
         driver:Show()
       end
     end
 
-    -- not M.Adjust: that stops the queue when a task is removed, and this one is just done
+    -- not M.Adjust: that stops the batch when a task is removed, and this one is just done
     task.count = task.count - 1
     if task.count <= 0 then
       local tasks = M.Tasks(profession)
@@ -552,15 +573,27 @@ driver:SetScript("OnEvent", function()
     end
     Changed()
 
+  elseif event == "UNIT_SPELLCAST_START" then
+    if arg1 == "player" and IsRunning(arg3, arg4) then M.confirm = nil end
+
+  elseif event == "UNIT_SPELLCAST_FAILED_QUIET" then
+    -- the client was still busy, and says nothing to the player about it
+    if arg1 == "player" and M.confirm and IsRunning(arg3, arg4) then
+      EndBatch()
+      Say("the client was busy, press Start again.")
+      Changed()
+    end
+
   elseif event == "UNIT_SPELLCAST_FAILED" or event == "UNIT_SPELLCAST_INTERRUPTED" then
+    -- the client has told the player why, if it needed to
     if arg1 == "player" and IsRunning(arg3, arg4) then
-      M.running, M.wait = nil, nil
+      EndBatch()
       Changed()
     end
 
   elseif event == "TRADE_SKILL_CLOSE" or event == "CRAFT_CLOSE" then
-    -- a batch already going carries on, but nothing can start without the window
-    M.running, M.wait = nil, nil
+    -- the batch carries on, but the button that would stop it is gone
+    EndBatch()
     Changed()
 
   else
@@ -569,7 +602,9 @@ driver:SetScript("OnEvent", function()
 end)
 
 driver:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
+driver:RegisterEvent("UNIT_SPELLCAST_START")
 driver:RegisterEvent("UNIT_SPELLCAST_FAILED")
+driver:RegisterEvent("UNIT_SPELLCAST_FAILED_QUIET")
 driver:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 driver:RegisterEvent("BAG_UPDATE_DELAYED")
 driver:RegisterEvent("TRADE_SKILL_CLOSE")

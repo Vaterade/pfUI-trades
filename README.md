@@ -6,10 +6,11 @@ Altoholic is optional. Don't run it alongside AdvancedTradeSkillWindow2, which u
 
 ## Using it
 
-Press **Tasks** in the profession window's title bar.
+Press **Tasks** at the bottom left of the recipe details.
 
 - **Add** puts the selected recipe on the list, using the amount in the window's quantity box.
-- **Start** crafts everything on the list that has its materials, in order, and **Stop** halts it.
+- **Start** crafts the first task on the list that has its materials, as many as it can, and **Stop**
+  halts it. The game only starts a craft from a click, so press **Start** again for the next task.
   Enchanting needs a target for every cast, so there the button is **Next** and casts one at a time.
 - Each task has buttons to change its count (hold Shift for 5), move it and remove it. Click its
   name to select the recipe.

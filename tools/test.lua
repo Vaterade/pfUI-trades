@@ -24,6 +24,7 @@ function handlers.IsShown(self) return self.shown end
 function handlers.IsVisible(self) return self.shown end
 function handlers.GetRight() return 700 end
 function handlers.GetFrameLevel() return 1 end
+function handlers.SetPoint(self, point, relative) self.point = { point, relative } end
 function handlers.GetChildren(self) return unpack(self.children) end
 function handlers.CreateFontString()
   local text = NewFrame("FontString")
@@ -63,7 +64,8 @@ function UnitFactionGroup() return "Horde" end
 function GetRealmName() return "Realm" end
 function SpellStopCasting() stopped = stopped + 1 end
 function IsShiftKeyDown() return false end
-DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+local said
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) said = text end }
 
 local BAR, ORE, COAL, BLADE = 2840, 2770, 3857, 7000
 
@@ -147,7 +149,8 @@ local function Reset()
   pfUITrades_DB = nil
   casts, stopped = {}, 0
   carried, banked = {}, {}
-  M.running, M.wait = nil, nil
+  M.running, M.confirm = nil, nil
+  said = nil
   list, subFilter, selected = fullList, 0, 2
   Altoholic = nil
 end
@@ -301,7 +304,7 @@ Eq(plan.alts, "off", "Altoholic setting off")
 Eq(Row(plan, ORE).alts, 0, "no alts when off")
 pfUI_config.trades = nil
 
--- [ Queue ]
+-- [ Crafting ]
 
 local function Tick(seconds)
   now = now + seconds
@@ -324,24 +327,69 @@ Eq(tasks[1].count, 2, "someone else's cast doesn't count")
 Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Frostbolt")
 Eq(tasks[1].count, 2, "another spell doesn't count")
 
+Fire("UNIT_SPELLCAST_START", "player", "Smelt Copper")
 Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Smelt Copper")
 Eq(tasks[1].count, 1, "counts down")
-Eq(M.wait, nil, "batch not done yet")
+Eq(M.running ~= nil, true, "batch not done yet")
+Fire("UNIT_SPELLCAST_START", "player", "Smelt Copper")
+Tick(10)
+Eq(M.running ~= nil, true, "a long cast isn't mistaken for the end of the batch")
 Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Smelt Copper")
 Eq(table.getn(tasks), 1, "finished task is removed")
-Eq(M.running ~= nil, true, "finishing a task keeps the queue going")
+Eq(M.running, nil, "the batch ends, so the button goes back to Start")
 Eq(stopped, 0, "finishing a task doesn't stop casting")
 
+Tick(10)
+Eq(table.getn(casts), 1, "the next task waits for a click, which the client requires")
 carried = { [BAR] = 6, [COAL] = 1 }
-Tick(0.1)
-Eq(table.getn(casts), 1, "next batch waits a moment")
-Tick(1)
-Eq(casts[2][1], "Copper Blade", "next task starts by itself")
-
+M.Start("TradeSkill")
+Eq(casts[2][1], "Copper Blade", "the next click casts the next task")
 Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Copper Blade")
-Tick(1)
 Eq(table.getn(tasks), 0, "all done")
-Eq(M.running, nil, "queue ends")
+Eq(M.running, nil, "nothing running")
+
+-- A cast that doesn't happen never leaves the button on Stop
+local realCast = DoTradeSkill
+local function OneTask()
+  Reset()
+  selected = 2; M.AddSelected("TradeSkill", 3)
+  carried = { [ORE] = 6 }
+end
+
+OneTask()
+function DoTradeSkill() Fire("UNIT_SPELLCAST_FAILED", "player", "Smelt Copper") end
+M.Start("TradeSkill")
+Eq(M.running, nil, "a refusal from inside the call")
+DoTradeSkill = realCast
+
+OneTask()
+function DoTradeSkill() Fire("UNIT_SPELLCAST_FAILED_QUIET", "player", "Smelt Copper") end
+M.Start("TradeSkill")
+Eq(M.running, nil, "a quiet refusal")
+Eq(said ~= nil and string.find(said, "busy", 1, true) ~= nil, true, "says the client was busy")
+DoTradeSkill = realCast
+
+OneTask()
+function DoTradeSkill() end
+M.Start("TradeSkill")
+Eq(M.running ~= nil, true, "waiting for the cast")
+Tick(3.1)
+Eq(M.running, nil, "no cast and no event")
+Eq(M.Tasks("Blacksmithing")[1].count, 3, "and the task keeps its count")
+DoTradeSkill = realCast
+
+OneTask()
+M.Start("TradeSkill")
+Fire("UNIT_SPELLCAST_START", "player", "Smelt Copper")
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Smelt Copper")
+Tick(3.1)
+Eq(M.running, nil, "a batch that ends early with no event")
+Eq(M.Tasks("Blacksmithing")[1].count, 2, "keeps what's left")
+
+OneTask()
+M.Start("TradeSkill")
+Fire("UNIT_SPELLCAST_FAILED_QUIET", "player", "Frostbolt")
+Eq(M.running ~= nil, true, "another spell's refusal is ignored")
 
 -- Failing, stopping, closing
 Reset()
@@ -351,7 +399,7 @@ M.Start("TradeSkill")
 Fire("UNIT_SPELLCAST_FAILED", "player", "Other Spell")
 Eq(M.running ~= nil, true, "another spell's failure is ignored")
 Fire("UNIT_SPELLCAST_INTERRUPTED", "player", "Smelt Copper")
-Eq(M.running, nil, "interrupted stops the queue")
+Eq(M.running, nil, "interrupted stops the batch")
 Eq(M.Tasks("Blacksmithing")[1].count, 5, "and the task keeps its count")
 
 M.Start("TradeSkill")
@@ -361,8 +409,8 @@ Eq(M.Tasks("Blacksmithing")[1].count, 5, "Stop keeps the remaining count")
 
 M.Start("TradeSkill")
 Fire("TRADE_SKILL_CLOSE")
-Eq(M.running, nil, "closing the window ends the queue")
-Eq(stopped, 1, "but leaves the batch going")
+Eq(M.running, nil, "closing the window lets go of the batch")
+Eq(stopped, 1, "but leaves it going")
 
 M.Start("TradeSkill")
 M.Remove("Blacksmithing", M.Tasks("Blacksmithing")[1])
@@ -422,9 +470,9 @@ C.global = { font_size = 12 }
 for _, name in ipairs({ "SkinButton", "SkinArrowButton", "SkinScrollbar", "CreateBackdrop", "CreateBackdropShadow", "FauxScrollFrame_OnVerticalScroll" }) do
   _G[name] = function() end
 end
-local scrollOffset = 0
 function FauxScrollFrame_Update() end
-function FauxScrollFrame_GetOffset() return scrollOffset end
+function FauxScrollFrame_GetOffset(frame) return rawget(frame, "offset") end
+function FauxScrollFrame_SetOffset(frame, offset) frame.offset = offset end
 function HookAddon(_, func) func() end
 function HookScript(f, script, func) f.scripts[script] = func end
 function IsAddOnLoaded() return false end
@@ -434,9 +482,15 @@ TradeSkillInputBox = NewFrame("EditBox")
 UIParent = NewFrame("Frame")
 TradeSkillFrame = NewFrame("Frame")
 CraftFrame = NewFrame("Frame")
+TradeSkillDetailScrollFrame = NewFrame("ScrollFrame")
+TradeSkillListScrollFrame = NewFrame("ScrollFrame")
+CraftListScrollFrame = NewFrame("ScrollFrame")
+CraftDetailScrollFrame = NewFrame("ScrollFrame")
 
 Reset()
 module()
+Eq(rawget(TradeSkillListScrollFrame, "offset"), 0, "the stock list has an offset before it's first drawn")
+Eq(rawget(CraftListScrollFrame, "offset"), 0, "and so does the craft list")
 TradeSkillFrame.scripts.OnShow()
 pfUITradesButton1.scripts.OnClick()
 local panel = pfUITradesPanel
@@ -470,13 +524,10 @@ panel.clear.scripts.OnClick()
 Eq(table.getn(M.Tasks("Blacksmithing")), 0, "Clear empties the list")
 Eq(panel.taskRows[1].shown, false, "rows hide")
 
--- The Tasks button makes way for Atlas-CFM's
-local anchored
-pfUITradesButton1.SetPoint = function(_, _, relative) anchored = relative end
-TradeSkillFrameAtlasButton = NewFrame("Button")
-arg1 = 1
-pfUITradesButton1.scripts.OnUpdate()
-Eq(anchored, TradeSkillFrameAtlasButton, "sits left of Atlas-CFM's button")
+-- The Tasks button sits at the bottom left of the recipe details
+Eq(pfUITradesButton1.point[1], "BOTTOMLEFT", "Tasks button corner")
+Eq(pfUITradesButton1.point[2], TradeSkillDetailScrollFrame, "Tasks button anchor")
+Eq(pfUITradesButton2.point[2], CraftDetailScrollFrame, "Tasks button anchor on the craft window")
 
 -- Beast Training has no profession line, so no button or panel
 CraftFrame.scripts.OnShow()

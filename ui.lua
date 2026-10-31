@@ -53,6 +53,7 @@ pfUI:RegisterModule("trades", function()
     local scroll = CreateFrame("ScrollFrame", name, panel, "FauxScrollFrameTemplate")
     scroll:SetWidth(WIDTH - 32)
     scroll:SetHeight(rows * ROW)
+    FauxScrollFrame_SetOffset(scroll, 0) -- nil until first scrolled, otherwise
     scroll:SetScript("OnVerticalScroll", function()
       FauxScrollFrame_OnVerticalScroll(ROW, update)
     end)
@@ -400,32 +401,19 @@ pfUI:RegisterModule("trades", function()
   local function Attach(name)
     local window = M.windows[name]
     local frame = _G[window.frame]
-    local toggle = Button(frame, T["Tasks"], 70, 18, function()
+
+    -- TradeSkillFrame_Update does arithmetic on this offset, but TradeSkillFrame_Show only sets
+    -- it after showing the window, so anything that redraws the list before then is an error.
+    local list = _G[name .. "ListScrollFrame"]
+    if list and not FauxScrollFrame_GetOffset(list) then FauxScrollFrame_SetOffset(list, 0) end
+
+    local toggle = Button(frame, T["Tasks"], 70, 22, function()
       SetPanelShown(not (panel and panel:IsShown()))
     end)
+    -- Bottom left of the recipe details, level with Aegis_Exchange's button in the bottom right
+    toggle:SetPoint("BOTTOMLEFT", _G[name .. "DetailScrollFrame"], "BOTTOMLEFT", 8, 8)
     toggle:SetFrameLevel(frame:GetFrameLevel() + 5)
     toggles[name] = toggle
-
-    -- Left of the close button, or of Atlas-CFM's button there, which can turn up after us
-    local function Anchor()
-      local atlas = _G[window.frame .. "AtlasButton"]
-      local beside = atlas and atlas:IsVisible() and atlas or _G[window.frame .. "CloseButton"]
-      if beside ~= toggle.beside then
-        toggle.beside = beside
-        toggle:ClearAllPoints()
-        toggle:SetPoint("RIGHT", beside, "LEFT", -4, 0)
-      end
-    end
-    Anchor()
-
-    local elapsed = 0
-    toggle:SetScript("OnUpdate", function()
-      elapsed = elapsed + arg1
-      if elapsed > .5 then
-        elapsed = 0
-        Anchor()
-      end
-    end)
 
     HookScript(frame, "OnShow", function() WindowShown(name) end)
     if frame:IsShown() then WindowShown(name) end
