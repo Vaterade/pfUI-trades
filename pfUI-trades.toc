@@ -5,6 +5,7 @@
 ## Version: 1.0.0
 ## Dependencies: pfUI
 ## OptionalDeps: Altoholic
+## SavedVariables: pfUITrades_Tasks
 ## SavedVariablesPerCharacter: pfUITrades_DB
 
 core.lua

@@ -146,7 +146,7 @@ local function Fire(name, a1, a4, a3)
 end
 
 local function Reset()
-  pfUITrades_DB = nil
+  pfUITrades_DB, pfUITrades_Tasks = nil, nil
   casts, stopped = {}, 0
   carried, banked = {}, {}
   M.running, M.confirm = nil, nil
@@ -196,10 +196,10 @@ GetTradeSkillReagentInfo = realInfo
 
 -- A cast counts against the task with its spell ID, whatever else shares the name
 Reset()
-M.DB().tasks = {
+pfUITrades_Tasks = { ["Realm|Horde"] = { Main = {
   Tailoring = { { name = "Same Name", spell = 1, count = 3, reagents = {} } },
   Leatherworking = { { name = "Same Name", spell = 2, count = 3, reagents = {} } },
-}
+} } }
 Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Same Name", 2)
 Eq(M.Tasks("Tailoring")[1].count, 3, "the other recipe's task is untouched")
 Eq(M.Tasks("Leatherworking")[1].count, 2, "the recipe cast counts down")
@@ -227,7 +227,7 @@ Eq(Row(plan, ORE).bank, 1, "bank is apart from bags")
 Eq(Row(plan, ORE).status, "short", "not enough anywhere")
 Eq(Row(plan, COAL).status, "bank", "1 coal in bags, 5 in bank, 2 needed")
 Eq(plan.alts, "missing", "no Altoholic")
-Eq(pfUITrades_DB.tasks.Blacksmithing[1].ready, nil, "plan results aren't saved on the task")
+Eq(M.MyTasks().Blacksmithing[1].ready, nil, "plan results aren't saved on the task")
 
 carried = { [ORE] = 8, [BAR] = 4, [COAL] = 2 }
 plan = M.Plan("Blacksmithing")
@@ -302,6 +302,127 @@ pfUI_config.trades = { altoholic = "0" }
 plan = M.Plan("Blacksmithing")
 Eq(plan.alts, "off", "Altoholic setting off")
 Eq(Row(plan, ORE).alts, 0, "no alts when off")
+pfUI_config.trades = nil
+
+-- [ Bank reminder ]
+
+local alerts = {}
+UIErrorsFrame = { AddMessage = function(_, text) table.insert(alerts, text) end }
+local chat = {}
+DEFAULT_CHAT_FRAME.AddMessage = function(_, text) said = text; table.insert(chat, text) end
+
+Reset()
+selected = 2; M.AddSelected("TradeSkill", 10) -- 20 ore
+selected = 3; M.AddSelected("TradeSkill", 1)  -- 4 bars, 1 coal; the 10 smelted cover the bars
+M.MyTasks().Mining = { { name = "Other", count = 1, made = 0, reagents = { { id = ORE, name = "Copper Ore", count = 5 } } } }
+carried = { [ORE] = 5, [COAL] = 1 }
+banked = { [ORE] = 100 }
+local bank = M.BankMaterials()
+Eq(table.getn(bank), 1, "only what's short and in the bank")
+Eq(bank[1].id, ORE, "the ore")
+Eq(bank[1].take, 20, "25 needed across professions, 5 carried")
+
+banked = { [ORE] = 8 }
+Eq(M.BankMaterials()[1].take, 8, "no more than the bank has")
+
+Fire("BANKFRAME_OPENED")
+Eq(table.getn(alerts), 1, "alerts on screen")
+Eq(chat[table.getn(chat)], "  8 x Copper Ore", "lists it in chat")
+
+alerts = {}
+pfUI_config.trades = { bankreminder = "0" }
+Fire("BANKFRAME_OPENED")
+Eq(table.getn(alerts), 0, "can be turned off")
+pfUI_config.trades = nil
+
+carried = { [ORE] = 25, [COAL] = 1 }
+Fire("BANKFRAME_OPENED")
+Eq(table.getn(alerts), 0, "quiet when the bags already cover it")
+
+carried = { [COAL] = 1 }
+banked = {}
+Fire("BANKFRAME_OPENED")
+Eq(table.getn(alerts), 0, "quiet when the bank has none")
+
+-- [ Alt reminder ]
+
+local function Alt(name, professions)
+  M.AccountTasks()[name] = professions
+end
+local function OreTask(count)
+  return { Mining = { { name = "Smelt", count = count, made = 1, item = BAR, reagents = { { id = ORE, name = "Copper Ore", count = 2 } } } } }
+end
+local function Sends(rows, alt)
+  for _, row in ipairs(rows) do
+    if row.alt == alt then return row.send end
+  end
+end
+
+Reset()
+pfUITrades_DB = { tasks = { Alchemy = { { name = "Old", count = 1, reagents = {} } }, Empty = {} } }
+Fire("PLAYER_LOGIN")
+Eq(M.AccountTasks().Main.Alchemy[1].name, "Old", "per-character lists move across at login")
+Eq(pfUITrades_DB.tasks, nil, "and leave the old place")
+Eq(M.MyTasks().Empty, nil, "empty ones aren't kept")
+
+Reset()
+Alt("Aaa", OreTask(5))  -- 10 ore
+carried = { [ORE] = 4 }
+banked = { [ORE] = 2 }
+Eq(Sends(M.AltMaterials(), "Aaa"), 6, "bags and bank both count")
+
+carried = { [ORE] = 40 }
+banked = {}
+Eq(Sends(M.AltMaterials(), "Aaa"), 10, "no more than the alt needs")
+
+Alt("Bbb", OreTask(25)) -- 50 ore
+Eq(Sends(M.AltMaterials(), "Bbb"), 30, "what one alt gets isn't offered to the next")
+
+Reset()
+Alt("Aaa", OreTask(5))
+selected = 2; M.AddSelected("TradeSkill", 18) -- 36 ore for this character
+carried = { [ORE] = 40 }
+Eq(Sends(M.AltMaterials(), "Aaa"), 4, "keeps what its own tasks need")
+
+carried = { [ORE] = 30 }
+Eq(table.getn(M.AltMaterials()), 0, "nothing spare, nothing offered")
+
+pfUITrades_Tasks["Realm|Alliance"] = { Enemy = OreTask(5) }
+Eq(Sends(M.AltMaterials(), "Enemy"), nil, "the other faction's lists aren't read")
+
+Reset()
+Alt("Aaa", OreTask(5))
+carried = { [ORE] = 40 }
+Altoholic = { db = { account = { data = { Horde = { Realm = { char = {
+  Aaa = { bag = { Bag0 = { size = 1, ids = { ORE }, counts = { 3 } } }, mail = { { link = Link(ORE), count = 2 } } },
+} } } } } } }
+Eq(Sends(M.AltMaterials(), "Aaa"), 5, "what the alt holds comes off")
+Altoholic = nil
+
+Reset()
+Alt("Aaa", { Mining = {
+  { name = "Smelt", count = 5, made = 1, item = BAR, reagents = { { id = ORE, name = "Copper Ore", count = 2 } } },
+  { name = "Blade", count = 1, made = 1, reagents = { { id = BAR, name = "Copper Bar", count = 4 } } },
+} })
+carried = { [ORE] = 40, [BAR] = 40 }
+local rows = M.AltMaterials()
+Eq(table.getn(rows), 1, "what the alt will make isn't asked for")
+Eq(rows[1].id, ORE, "only the ore")
+
+alerts, chat = {}, {}
+carried = { [ORE] = 40 }
+Fire("MAIL_SHOW")
+Eq(table.getn(alerts), 1, "alerts at the mailbox")
+Eq(chat[table.getn(chat)], "  10 x Copper Ore for Aaa", "says how many, what and for whom")
+
+alerts = {}
+Fire("BANKFRAME_OPENED")
+Eq(table.getn(alerts), 1, "and at the bank")
+
+alerts = {}
+pfUI_config.trades = { altreminder = "0" }
+Fire("MAIL_SHOW")
+Eq(table.getn(alerts), 0, "can be turned off")
 pfUI_config.trades = nil
 
 -- [ Crafting ]

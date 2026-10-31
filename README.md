@@ -16,7 +16,7 @@ Press **Tasks** at the bottom left of the recipe details.
   name to select the recipe.
 
 Tasks count down whenever the recipe's craft succeeds, including from the window's own Create
-button. The list is saved per character and per profession. A task's count is crafts, not items.
+button. Each character has its own list per profession. A task's count is crafts, not items.
 
 ## Materials
 
@@ -36,6 +36,20 @@ task doesn't show those bars as missing.
 Your own bags and bank are always live. Mail and alts come from Altoholic, covering characters
 of the same realm and faction, and are as recent as each character's last login. Both can be
 turned off under pfUI's settings, in Thirdparty > Trades.
+
+## Bank reminder
+
+Opening your bank tells you if it holds materials your tasks need, in any profession: a message
+on screen and a list in chat of how many of each to take. It only counts what your bags are short
+of, and says nothing if there's nothing to take. It can be turned off in the same settings.
+
+## Alt reminder
+
+Opening your bank or mailbox also tells you if this character has materials that another
+character's task list needs, with how many to send to whom. It covers characters of the same realm
+and faction, once they've logged in with this version. This character keeps what its own tasks need, and
+what the alt holds comes off, as Altoholic last saw it. Without Altoholic, the alt counts as having
+none. It can be turned off in the same settings.
 
 ## Testing
 

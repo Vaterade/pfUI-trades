@@ -37,8 +37,32 @@ end
 
 function M.DB()
   pfUITrades_DB = pfUITrades_DB or {}
-  pfUITrades_DB.tasks = pfUITrades_DB.tasks or {}
   return pfUITrades_DB
+end
+
+-- Task lists are account-wide so that characters can see each other's:
+-- pfUITrades_Tasks["realm|faction"][character][profession] = { task, ... }
+function M.AccountTasks()
+  pfUITrades_Tasks = pfUITrades_Tasks or {}
+  local key = GetRealmName() .. "|" .. UnitFactionGroup("player")
+  pfUITrades_Tasks[key] = pfUITrades_Tasks[key] or {}
+  return pfUITrades_Tasks[key]
+end
+
+function M.MyTasks()
+  local account = M.AccountTasks()
+  local me = UnitName("player")
+  account[me] = account[me] or {}
+
+  -- lists from when they were saved per character
+  local db = M.DB()
+  if db.tasks then
+    for profession, tasks in pairs(db.tasks) do
+      if table.getn(tasks) > 0 then account[me][profession] = tasks end
+    end
+    db.tasks = nil
+  end
+  return account[me]
 end
 
 function M.Option(key)
@@ -232,7 +256,7 @@ end
 -- [ Tasks ]
 
 function M.Tasks(profession)
-  local tasks = M.DB().tasks
+  local tasks = M.MyTasks()
   tasks[profession] = tasks[profession] or {}
   return tasks[profession]
 end
@@ -300,7 +324,7 @@ end
 
 function M.Clear(profession)
   if M.running and M.running.profession == profession then M.Stop() end
-  M.DB().tasks[profession] = {}
+  M.MyTasks()[profession] = {}
   Changed()
 end
 
@@ -450,6 +474,123 @@ function M.Plan(profession)
   return plan
 end
 
+-- What to take out of the bank for the tasks of every profession, as rows of id, name, take: only
+-- what the bags are short of and the bank has.
+function M.BankMaterials()
+  local needed, order = {}, {}
+  for profession in pairs(M.MyTasks()) do
+    for _, row in ipairs(M.Plan(profession).materials) do
+      if not needed[row.id] then
+        needed[row.id] = { id = row.id, name = row.name, need = 0, bags = row.bags, bank = row.bank }
+        table.insert(order, needed[row.id])
+      end
+      needed[row.id].need = needed[row.id].need + row.need
+    end
+  end
+
+  local rows = {}
+  for _, row in ipairs(order) do
+    row.take = math.min(row.need - row.bags, row.bank)
+    if row.take > 0 then table.insert(rows, row) end
+  end
+  table.sort(rows, function(a, b) return a.name < b.name end)
+  return rows
+end
+
+local function BankReminder()
+  if not M.Option("bankreminder") then return end
+  local rows = M.BankMaterials()
+  if table.getn(rows) == 0 then return end
+
+  UIErrorsFrame:AddMessage("Your bank has materials for your task list", 1, .8, .2)
+  Say("take these from the bank for your task list:")
+  for _, row in ipairs(rows) do
+    DEFAULT_CHAT_FRAME:AddMessage("  " .. row.take .. " x " .. row.name)
+  end
+end
+
+-- What a character's tasks need overall, by item ID. What a task makes comes off what the
+-- same profession's tasks need, as in M.Plan.
+local function NetNeeds(professions)
+  local needs = {}
+  for _, tasks in pairs(professions) do
+    local needed, planned = {}, {}
+    for _, task in ipairs(tasks) do
+      for _, reagent in ipairs(task.reagents) do
+        needed[reagent.id] = needed[reagent.id] or { name = reagent.name, need = 0 }
+        needed[reagent.id].need = needed[reagent.id].need + task.count * reagent.count
+      end
+      if task.item then
+        planned[task.item] = (planned[task.item] or 0) + task.count * task.made
+      end
+    end
+    for id, row in pairs(needed) do
+      local need = row.need - (planned[id] or 0)
+      if need > 0 then
+        needs[id] = needs[id] or { name = row.name, need = 0 }
+        needs[id].need = needs[id].need + need
+      end
+    end
+  end
+  return needs
+end
+
+-- What this character could send its alts for their task lists, as rows of alt, id, name, send.
+-- It keeps what its own tasks need, each item is only offered once, and what an alt already
+-- holds comes off, as far as Altoholic knows.
+function M.AltMaterials()
+  local account = M.AccountTasks()
+  local me = UnitName("player")
+  local mine = NetNeeds(M.MyTasks())
+
+  local alts, wanted = {}, {}
+  for name, professions in pairs(account) do
+    if name ~= me then
+      local needs = NetNeeds(professions)
+      table.insert(alts, { name = name, needs = needs })
+      for id in pairs(needs) do wanted[id] = true end
+    end
+  end
+  table.sort(alts, function(a, b) return a.name < b.name end)
+
+  local found = ReadAltoholic(wanted)
+  local spare, rows = {}, {}
+  for _, alt in ipairs(alts) do
+    local sorted = {}
+    for id, row in pairs(alt.needs) do
+      table.insert(sorted, { id = id, name = row.name, need = row.need })
+    end
+    table.sort(sorted, function(a, b) return a.name < b.name end)
+
+    for _, row in ipairs(sorted) do
+      if not spare[row.id] then
+        spare[row.id] = C_Item.GetItemCount(row.id, true) - (mine[row.id] and mine[row.id].need or 0)
+      end
+      local held = found[row.id] and found[row.id][alt.name]
+      local short = row.need - (held and held.bags + held.bank + held.mail or 0)
+      local send = math.min(short, spare[row.id])
+      if send > 0 then
+        spare[row.id] = spare[row.id] - send
+        table.insert(rows, { alt = alt.name, id = row.id, name = row.name, send = send })
+      end
+    end
+  end
+  return rows
+end
+
+-- At the bank and the mailbox, the places these can be fetched and sent from.
+local function AltReminder()
+  if not M.Option("altreminder") then return end
+  local rows = M.AltMaterials()
+  if table.getn(rows) == 0 then return end
+
+  UIErrorsFrame:AddMessage("You have materials for an alt's task list", 1, .8, .2)
+  Say("you have materials for your alts' task lists:")
+  for _, row in ipairs(rows) do
+    DEFAULT_CHAT_FRAME:AddMessage("  " .. row.send .. " x " .. row.name .. " for " .. row.alt)
+  end
+end
+
 -- [ Crafting ]
 
 -- The client only starts these casts from a click. Called from OnUpdate, DoTradeSkill reaches
@@ -513,7 +654,7 @@ end
 -- recipe's cast turns out to be a different spell from the one its link names.
 local function FindTask(spell, name)
   local byName, byNameProfession
-  for profession, tasks in pairs(M.DB().tasks) do
+  for profession, tasks in pairs(M.MyTasks()) do
     for _, task in ipairs(tasks) do
       if task.spell == spell then return profession, task end
       if task.name == name then byName, byNameProfession = task, profession end
@@ -591,6 +732,16 @@ driver:SetScript("OnEvent", function()
       Changed()
     end
 
+  elseif event == "PLAYER_LOGIN" then
+    M.MyTasks() -- moves an old per-character list across, so alts can see it
+
+  elseif event == "BANKFRAME_OPENED" then
+    BankReminder()
+    AltReminder()
+
+  elseif event == "MAIL_SHOW" then
+    AltReminder()
+
   elseif event == "TRADE_SKILL_CLOSE" or event == "CRAFT_CLOSE" then
     -- the batch carries on, but the button that would stop it is gone
     EndBatch()
@@ -607,5 +758,8 @@ driver:RegisterEvent("UNIT_SPELLCAST_FAILED")
 driver:RegisterEvent("UNIT_SPELLCAST_FAILED_QUIET")
 driver:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 driver:RegisterEvent("BAG_UPDATE_DELAYED")
+driver:RegisterEvent("PLAYER_LOGIN")
+driver:RegisterEvent("BANKFRAME_OPENED")
+driver:RegisterEvent("MAIL_SHOW")
 driver:RegisterEvent("TRADE_SKILL_CLOSE")
 driver:RegisterEvent("CRAFT_CLOSE")
