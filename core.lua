@@ -681,6 +681,22 @@ local function IsRunning(spell, name)
   return running and (running.task.spell == spell or running.task.name == name)
 end
 
+-- Says what's next once a batch is over, since the next task needs another press.
+local function AnnounceNext(profession)
+  local plan = M.Plan(profession)
+  if table.getn(plan.tasks) == 0 then
+    Say("the task list is finished.")
+    return
+  end
+  for _, task in ipairs(plan.tasks) do
+    if plan.ready[task] > 0 then
+      Say("batch finished. Press Start for " .. task.name .. ".")
+      return
+    end
+  end
+  Say("batch finished. The remaining tasks are waiting for materials.")
+end
+
 -- [ Events ]
 
 local driver = CreateFrame("Frame")
@@ -707,10 +723,12 @@ driver:SetScript("OnEvent", function()
     if not profession then return end
 
     local running = M.running
+    local finished
     if running and running.task == task then
       running.left = running.left - 1
       if running.left <= 0 then
         EndBatch()
+        finished = true
       else
         -- the next craft of the batch should follow at once
         M.confirm = GetTime() + CONFIRM_TIME
@@ -725,6 +743,7 @@ driver:SetScript("OnEvent", function()
       local i = Position(tasks, task)
       if i then table.remove(tasks, i) end
     end
+    if finished then AnnounceNext(profession) end
     Changed()
 
   elseif event == "UNIT_SPELLCAST_START" then

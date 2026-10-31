@@ -471,6 +471,7 @@ Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Smelt Copper")
 Eq(table.getn(tasks), 1, "finished task is removed")
 Eq(M.running, nil, "the batch ends, so the button goes back to Start")
 Eq(stopped, 0, "finishing a task doesn't stop casting")
+Eq(said ~= nil and string.find(said, "Press Start for Copper Blade", 1, true) ~= nil, true, "says what to press next")
 
 Tick(10)
 Eq(table.getn(casts), 1, "the next task waits for a click, which the client requires")
@@ -480,6 +481,22 @@ Eq(casts[2][1], "Copper Blade", "the next click casts the next task")
 Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Copper Blade")
 Eq(table.getn(tasks), 0, "all done")
 Eq(M.running, nil, "nothing running")
+Eq(said ~= nil and string.find(said, "the task list is finished", 1, true) ~= nil, true, "says when the list is done")
+
+Reset()
+selected = 2; M.AddSelected("TradeSkill", 1)
+selected = 3; M.AddSelected("TradeSkill", 1)
+carried = { [ORE] = 2 }
+M.Start("TradeSkill")
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Smelt Copper")
+Eq(said ~= nil and string.find(said, "waiting for materials", 1, true) ~= nil, true, "says when the rest can't be made yet")
+
+Reset()
+selected = 2; M.AddSelected("TradeSkill", 2)
+carried = { [ORE] = 4 }
+said = nil
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Smelt Copper")
+Eq(said, nil, "crafting with the window's own button says nothing")
 
 -- A cast that doesn't happen never leaves the button on Stop
 local realCast = DoTradeSkill
