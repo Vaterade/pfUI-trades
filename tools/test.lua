@@ -1,0 +1,486 @@
+-- Offline test with stubs of the 1.12 and ClassicAPI calls. Run from the addon folder:
+--   luajit tools/test.lua
+-- LuaJIT because ui.lua's module runs under pfUI's setfenv, and that's Lua 5.1.
+
+table.getn = table.getn or function(t) return #t end
+
+-- [ A frame that accepts anything ]
+
+local handlers = {}
+local function NewFrame(kind, name)
+  local frame = { scripts = {}, shown = true, kind = kind, children = {} }
+  setmetatable(frame, { __index = function(_, key)
+    return handlers[key] or function() end
+  end })
+  if name then _G[name] = frame end
+  return frame
+end
+
+function handlers.SetScript(self, script, func) self.scripts[script] = func end
+function handlers.HookScript(self, script, func) self.scripts[script] = func end
+function handlers.Show(self) self.shown = true end
+function handlers.Hide(self) self.shown = false end
+function handlers.IsShown(self) return self.shown end
+function handlers.IsVisible(self) return self.shown end
+function handlers.GetRight() return 700 end
+function handlers.GetFrameLevel() return 1 end
+function handlers.GetChildren(self) return unpack(self.children) end
+function handlers.CreateFontString()
+  local text = NewFrame("FontString")
+  text.SetText = function(self, value) self.text = value end
+  return text
+end
+function handlers.CreateTexture() return NewFrame("Texture") end
+function handlers.SetText(self, value) self.label = value end
+function handlers.GetNumber() return 3 end
+function handlers.Enable(self) self.enabled = true end
+function handlers.Disable(self) self.enabled = false end
+
+function CreateFrame(kind, name, parent)
+  local frame = NewFrame(kind, name)
+  frame.parent = parent
+  return frame
+end
+
+function handlers.GetParent(self) return self.parent end
+function handlers.SetParent(self, parent) self.parent = parent end
+
+-- [ World ]
+
+local carried, banked = {}, {}
+C_Item = {
+  GetItemCount = function(id, bank)
+    return (carried[id] or 0) + (bank and banked[id] or 0)
+  end,
+  GetItemNameByID = function(id) return "Fetched " .. id end,
+  GetItemIconByID = function() return "fetched icon" end,
+}
+
+local now, casts, stopped = 100, {}, 0
+function GetTime() return now end
+function UnitName() return "Main" end
+function UnitFactionGroup() return "Horde" end
+function GetRealmName() return "Realm" end
+function SpellStopCasting() stopped = stopped + 1 end
+function IsShiftKeyDown() return false end
+DEFAULT_CHAT_FRAME = { AddMessage = function() end }
+
+local BAR, ORE, COAL, BLADE = 2840, 2770, 3857, 7000
+
+-- Row order as the player sees it. Hidden rows only come back with the filters cleared.
+local fullList = {
+  { "Mining", "header" },
+  { "Smelt Copper", "easy", reagents = { { ORE, "Copper Ore", 2 } }, item = BAR, made = 1 },
+  { "Copper Blade", "easy", reagents = { { BAR, "Copper Bar", 4 }, { COAL, "Coal", 1 } }, item = BLADE, made = 1 },
+}
+local list = fullList
+local selected = 2
+local cleared = 0
+
+local function Link(id) return id and ("|cffffffff|Hitem:" .. id .. ":0:0:0|h[x]|h|r") end
+
+function GetTradeSkillLine() return "Blacksmithing" end
+function IsTradeSkillLinked() return false end
+function GetNumTradeSkills() return table.getn(list) end
+function GetTradeSkillSelectionIndex() return selected end
+function GetTradeSkillInfo(i) local r = list[i]; if r then return r[1], r[2], 0, true end end
+function GetTradeSkillIcon() return "icon" end
+function GetTradeSkillItemID(i) return list[i].item end
+function GetTradeSkillRecipeLink(i) return "|cffffd000|Henchant:" .. (1000 + i) .. "|h[x]|h|r" end
+function GetTradeSkillNumMade(i) return list[i].made, list[i].made end
+function GetTradeSkillNumReagents(i) return table.getn(list[i].reagents) end
+function GetTradeSkillReagentInfo(i, r) local x = list[i].reagents[r]; return x[2], "ricon", x[3] end
+function GetTradeSkillReagentItemID(i, r) return list[i].reagents[r][1] end
+function DoTradeSkill(i, n) table.insert(casts, { list[i][1], n, table.getn(list) }) end
+function GetTradeSkillSubClasses() return "A", "B" end
+function GetTradeSkillInvSlots() return "A" end
+local subFilter = 0
+function GetTradeSkillSubClassFilter(i) return i == subFilter end
+function GetTradeSkillInvSlotFilter(i) return i == 0 end
+function SetTradeSkillSubClassFilter(i)
+  subFilter = i
+  list = i == 0 and fullList or { fullList[1], fullList[2] }
+  cleared = cleared + 1
+end
+function SetTradeSkillInvSlotFilter() end
+function ExpandTradeSkillSubClass() end
+function CollapseTradeSkillSubClass() end
+function SelectTradeSkill() end
+function TradeSkillFrame_SetSelection(i) selected = i end
+function TradeSkillFrame_Update() end
+function GetCraftDisplaySkillLine() return nil end -- Beast Training
+
+-- [ Load ]
+
+local module
+pfUI = {
+  bootup = nil,
+  font_default = "font",
+  RegisterModule = function(_, _, func) module = func end,
+  UpdateConfig = function(_, group, _, key, value)
+    pfUI_config[group] = pfUI_config[group] or {}
+    if pfUI_config[group][key] == nil then pfUI_config[group][key] = value end
+  end,
+}
+pfUI_config = {}
+
+dofile("core.lua")
+dofile("ui.lua")
+
+local M = pfUITrades
+local failures, passed = 0, 0
+local function Eq(got, want, what)
+  if got == want then
+    passed = passed + 1
+  else
+    failures = failures + 1
+    print("FAIL " .. what .. ": got " .. tostring(got) .. ", want " .. tostring(want))
+  end
+end
+
+local function Fire(name, a1, a4, a3)
+  event, arg1, arg3, arg4 = name, a1, a3, a4
+  M.driver.scripts.OnEvent()
+end
+
+local function Reset()
+  pfUITrades_DB = nil
+  casts, stopped = {}, 0
+  carried, banked = {}, {}
+  M.running, M.wait = nil, nil
+  list, subFilter, selected = fullList, 0, 2
+  Altoholic = nil
+end
+
+local function Row(plan, id)
+  for _, row in ipairs(plan.materials) do
+    if row.id == id then return row end
+  end
+end
+
+-- [ Tasks ]
+
+Reset()
+M.AddSelected("TradeSkill", 3)
+M.AddSelected("TradeSkill", 2)
+local tasks = M.Tasks("Blacksmithing")
+Eq(table.getn(tasks), 1, "adding a recipe twice merges it")
+Eq(tasks[1].count, 5, "merged count")
+Eq(tasks[1].reagents[1].id, ORE, "reagent id comes from its link")
+
+selected = 1
+M.AddSelected("TradeSkill", 1)
+Eq(table.getn(tasks), 1, "a header can't be added")
+
+selected = 3
+M.AddSelected("TradeSkill", 1)
+M.Move("Blacksmithing", tasks[2], -1)
+Eq(tasks[1].name, "Copper Blade", "moving up")
+M.Move("Blacksmithing", tasks[1], -1)
+Eq(tasks[1].name, "Copper Blade", "moving past the top does nothing")
+M.Adjust("Blacksmithing", tasks[1], -1)
+Eq(table.getn(tasks), 1, "counting down to zero removes the task")
+
+Eq(tasks[1].spell, 1002, "spell ID comes from the recipe link")
+
+Reset()
+local realInfo = GetTradeSkillReagentInfo
+function GetTradeSkillReagentInfo(i, r) return nil, nil, list[i].reagents[r][3] end
+selected = 2
+M.AddSelected("TradeSkill", 1)
+Eq(M.Tasks("Blacksmithing")[1].reagents[1].name, "Fetched " .. ORE, "uncached reagent still adds")
+GetTradeSkillReagentInfo = realInfo
+
+-- A cast counts against the task with its spell ID, whatever else shares the name
+Reset()
+M.DB().tasks = {
+  Tailoring = { { name = "Same Name", spell = 1, count = 3, reagents = {} } },
+  Leatherworking = { { name = "Same Name", spell = 2, count = 3, reagents = {} } },
+}
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Same Name", 2)
+Eq(M.Tasks("Tailoring")[1].count, 3, "the other recipe's task is untouched")
+Eq(M.Tasks("Leatherworking")[1].count, 2, "the recipe cast counts down")
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Same Name", 99)
+local byName = M.Tasks("Tailoring")[1].count + M.Tasks("Leatherworking")[1].count
+Eq(byName, 4, "an unknown spell ID falls back to the name")
+
+-- [ Plan ]
+
+Reset()
+selected = 2
+M.AddSelected("TradeSkill", 4)   -- Smelt Copper x4: 8 ore, makes 4 bars
+selected = 3
+M.AddSelected("TradeSkill", 2)   -- Copper Blade x2: 8 bars, 2 coal
+tasks = M.Tasks("Blacksmithing")
+
+carried = { [ORE] = 6, [COAL] = 1 }
+banked = { [ORE] = 1, [COAL] = 5 }
+local plan = M.Plan("Blacksmithing")
+Eq(plan.ready[tasks[1]], 3, "ready limited by carried ore, not banked")
+Eq(plan.ready[tasks[2]], 0, "3 smelted bars don't make a blade")
+Eq(Row(plan, BAR).need, 4, "planned bars come off what's needed")
+Eq(Row(plan, ORE).bags, 6, "bags")
+Eq(Row(plan, ORE).bank, 1, "bank is apart from bags")
+Eq(Row(plan, ORE).status, "short", "not enough anywhere")
+Eq(Row(plan, COAL).status, "bank", "1 coal in bags, 5 in bank, 2 needed")
+Eq(plan.alts, "missing", "no Altoholic")
+Eq(pfUITrades_DB.tasks.Blacksmithing[1].ready, nil, "plan results aren't saved on the task")
+
+carried = { [ORE] = 8, [BAR] = 4, [COAL] = 2 }
+plan = M.Plan("Blacksmithing")
+Eq(plan.ready[tasks[2]], 2, "bars from the earlier task are used by the next")
+Eq(Row(plan, BAR).status, "bags", "the 4 bars not covered by smelting are in the bags")
+
+-- Each task uses up what earlier ones took
+Reset()
+list = { fullList[1], { "One", "easy", reagents = { { COAL, "Coal", 2 } }, made = 0 }, { "Two", "easy", reagents = { { COAL, "Coal", 2 } }, made = 0 } }
+selected = 2; M.AddSelected("TradeSkill", 2)
+selected = 3; M.AddSelected("TradeSkill", 2)
+carried = { [COAL] = 6 }
+tasks = M.Tasks("Blacksmithing")
+plan = M.Plan("Blacksmithing")
+Eq(plan.ready[tasks[1]], 2, "first task takes what it needs")
+Eq(plan.ready[tasks[2]], 1, "second gets the rest")
+
+-- [ Altoholic ]
+
+local function DefaultsTable(t)
+  -- like Altoholic's: reading a missing key creates it
+  return setmetatable(t, { __index = function(self, key)
+    local entry = {}
+    rawset(self, key, entry)
+    return entry
+  end })
+end
+
+Reset()
+selected = 2
+M.AddSelected("TradeSkill", 10)  -- 20 ore
+carried = { [ORE] = 2 }
+banked = { [ORE] = 3 }
+Altoholic = { db = { account = { data = DefaultsTable({
+  Horde = DefaultsTable({ Realm = DefaultsTable({ char = DefaultsTable({
+    Main = {
+      bag = { Bag0 = { size = 4, ids = { ORE }, counts = { 99 } } },
+      mail = { { link = Link(ORE), count = 2 } },
+    },
+    Alt = {
+      bag = {
+        Bag0 = { size = 2, ids = { ORE, ORE, ORE }, counts = { 5, nil, 40 } }, -- slot 3 is stale
+        Bag100 = { size = 1, ids = { ORE }, counts = { 4 } },
+        Bag6 = { size = 1, ids = { ORE }, counts = { 2 } },
+        ["Bag-2"] = { size = 1, ids = { COAL }, counts = {} },
+      },
+      mail = { { link = Link(ORE), count = 3 }, { link = Link(COAL) } },
+    },
+  }) }) }),
+  Alliance = DefaultsTable({ Realm = DefaultsTable({ char = DefaultsTable({
+    Enemy = { bag = { Bag0 = { size = 1, ids = { ORE }, counts = { 50 } } } },
+  }) }) }),
+}) } } }
+
+plan = M.Plan("Blacksmithing")
+local ore = Row(plan, ORE)
+Eq(plan.alts, 1, "one alt on this realm and faction")
+Eq(ore.mail, 2, "own mail counted, own stale bags not")
+Eq(ore.alts, 15, "alt bags 6, bank 6, mail 3; other faction and stale slot left out")
+Eq(ore.chars[1].bags, 6, "alt bags, with an uncounted single item as 1")
+Eq(ore.chars[1].bank, 6, "Bag100 and bank bags are bank")
+Eq(ore.chars[1].mail, 3, "alt mail")
+Eq(ore.status, "elsewhere", "2 bags + 3 bank + 2 mail + 15 alts covers 20")
+Eq(rawget(Altoholic.db.account.data, "Neutral"), nil, "reading creates nothing")
+
+pfUI_config.trades = { altoholic = "1", mail = "0" }
+ore = Row(M.Plan("Blacksmithing"), ORE)
+Eq(ore.mail, 0, "mail setting off: own mail")
+Eq(ore.alts, 12, "mail setting off: alt mail")
+
+pfUI_config.trades = { altoholic = "0" }
+plan = M.Plan("Blacksmithing")
+Eq(plan.alts, "off", "Altoholic setting off")
+Eq(Row(plan, ORE).alts, 0, "no alts when off")
+pfUI_config.trades = nil
+
+-- [ Queue ]
+
+local function Tick(seconds)
+  now = now + seconds
+  M.driver.scripts.OnUpdate()
+end
+
+Reset()
+selected = 2; M.AddSelected("TradeSkill", 2)  -- Smelt Copper x2
+selected = 3; M.AddSelected("TradeSkill", 1)  -- Copper Blade x1
+tasks = M.Tasks("Blacksmithing")
+carried = { [ORE] = 4, [BAR] = 4, [COAL] = 1 }
+
+M.Start("TradeSkill")
+Eq(casts[1][1], "Smelt Copper", "starts with the first task")
+Eq(casts[1][2], 2, "as many as it can")
+Eq(M.running.left, 2, "running")
+
+Fire("UNIT_SPELLCAST_SUCCEEDED", "party1", "Smelt Copper")
+Eq(tasks[1].count, 2, "someone else's cast doesn't count")
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Frostbolt")
+Eq(tasks[1].count, 2, "another spell doesn't count")
+
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Smelt Copper")
+Eq(tasks[1].count, 1, "counts down")
+Eq(M.wait, nil, "batch not done yet")
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Smelt Copper")
+Eq(table.getn(tasks), 1, "finished task is removed")
+Eq(M.running ~= nil, true, "finishing a task keeps the queue going")
+Eq(stopped, 0, "finishing a task doesn't stop casting")
+
+carried = { [BAR] = 6, [COAL] = 1 }
+Tick(0.1)
+Eq(table.getn(casts), 1, "next batch waits a moment")
+Tick(1)
+Eq(casts[2][1], "Copper Blade", "next task starts by itself")
+
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Copper Blade")
+Tick(1)
+Eq(table.getn(tasks), 0, "all done")
+Eq(M.running, nil, "queue ends")
+
+-- Failing, stopping, closing
+Reset()
+selected = 2; M.AddSelected("TradeSkill", 5)
+carried = { [ORE] = 10 }
+M.Start("TradeSkill")
+Fire("UNIT_SPELLCAST_FAILED", "player", "Other Spell")
+Eq(M.running ~= nil, true, "another spell's failure is ignored")
+Fire("UNIT_SPELLCAST_INTERRUPTED", "player", "Smelt Copper")
+Eq(M.running, nil, "interrupted stops the queue")
+Eq(M.Tasks("Blacksmithing")[1].count, 5, "and the task keeps its count")
+
+M.Start("TradeSkill")
+M.Stop()
+Eq(stopped, 1, "Stop interrupts the batch")
+Eq(M.Tasks("Blacksmithing")[1].count, 5, "Stop keeps the remaining count")
+
+M.Start("TradeSkill")
+Fire("TRADE_SKILL_CLOSE")
+Eq(M.running, nil, "closing the window ends the queue")
+Eq(stopped, 1, "but leaves the batch going")
+
+M.Start("TradeSkill")
+M.Remove("Blacksmithing", M.Tasks("Blacksmithing")[1])
+Eq(M.running, nil, "removing the running task stops")
+Eq(stopped, 2, "and interrupts it")
+
+-- Nothing ready: no cast
+Reset()
+selected = 2; M.AddSelected("TradeSkill", 1)
+M.Start("TradeSkill")
+Eq(table.getn(casts), 0, "no materials, no cast")
+
+-- A task hidden by the subclass filter still gets cast at its real row, and the filter returns
+Reset()
+selected = 3; M.AddSelected("TradeSkill", 1)
+carried = { [BAR] = 4, [COAL] = 1 }
+SetTradeSkillSubClassFilter(1)
+Eq(table.getn(list), 2, "filter hides the recipe")
+M.Start("TradeSkill")
+Eq(casts[1][1], "Copper Blade", "hidden recipe is found")
+Eq(casts[1][3], 3, "cast with the full list showing")
+Eq(subFilter, 1, "filter restored")
+Eq(table.getn(list), 2, "list restored")
+
+-- Enchanting: one at a time, no queue
+Reset()
+local crafts = {
+  { "Enchant Bracer", "optimal", reagents = { { COAL, "Strange Dust", 2 } } },
+}
+local crafted = 0
+function GetCraftDisplaySkillLine() return "Enchanting", 100, 300 end
+function GetNumCrafts() return 1 end
+function GetCraftSelectionIndex() return 1 end
+function GetCraftInfo(i) local c = crafts[i]; return c[1], "", c[2], 0, true end
+function GetCraftIcon() return "icon" end
+function GetCraftNumReagents() return 1 end
+function GetCraftReagentInfo(_, r) local x = crafts[1].reagents[r]; return x[2], "ricon", x[3] end
+function GetCraftReagentItemID(_, r) return crafts[1].reagents[r][1] end
+function GetCraftSpellID() return 7000 end
+function IsCraftLinked() return false end
+function DoCraft() crafted = crafted + 1 end
+M.AddSelected("Craft", 2)
+carried = { [COAL] = 4 }
+M.Start("Craft")
+Eq(crafted, 1, "one enchant")
+Eq(M.running, nil, "enchanting doesn't queue")
+Eq(M.Tasks("Enchanting")[1].count, 2, "doesn't count until it goes off")
+Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "Enchant Bracer")
+Eq(M.Tasks("Enchanting")[1].count, 1, "counts when it goes off")
+function GetCraftDisplaySkillLine() return nil end
+
+-- [ The panel ]
+
+T = setmetatable({}, { __index = function(_, key) return key end })
+C = pfUI_config
+C.global = { font_size = 12 }
+for _, name in ipairs({ "SkinButton", "SkinArrowButton", "SkinScrollbar", "CreateBackdrop", "CreateBackdropShadow", "FauxScrollFrame_OnVerticalScroll" }) do
+  _G[name] = function() end
+end
+local scrollOffset = 0
+function FauxScrollFrame_Update() end
+function FauxScrollFrame_GetOffset() return scrollOffset end
+function HookAddon(_, func) func() end
+function HookScript(f, script, func) f.scripts[script] = func end
+function IsAddOnLoaded() return false end
+pfUI.gui = nil
+GameTooltip = NewFrame("GameTooltip")
+TradeSkillInputBox = NewFrame("EditBox")
+UIParent = NewFrame("Frame")
+TradeSkillFrame = NewFrame("Frame")
+CraftFrame = NewFrame("Frame")
+
+Reset()
+module()
+TradeSkillFrame.scripts.OnShow()
+pfUITradesButton1.scripts.OnClick()
+local panel = pfUITradesPanel
+Eq(panel ~= nil and panel.shown, true, "the Tasks button opens the panel")
+Eq(pfUITrades_DB.open, 1, "and that's remembered")
+
+selected = 2
+carried = { [ORE] = 2 }
+banked = { [ORE] = 1 }
+panel.add.scripts.OnClick()
+Eq(M.Tasks("Blacksmithing")[1].count, 3, "Add uses the window's amount")
+Eq(panel.taskRows[1].name.text, "Smelt Copper", "task row")
+Eq(panel.taskRows[1].count.text, "|cffffff4d1/3|r", "ready of total")
+Eq(panel.materialRows[1].name.text, "Copper Ore", "material row")
+Eq(panel.materialRows[1].need.text, "6", "needed")
+Eq(panel.materialRows[1].bags.text, "2", "in bags")
+Eq(panel.materialRows[1].bank.text, "1", "in bank")
+Eq(panel.source.text, "Altoholic: not loaded, alts not counted", "says when alts aren't counted")
+Eq(pfUITradesButton1.label, "Tasks (1)", "the button shows how many")
+Eq(panel.start.label, "Start", "start label")
+
+panel.start.scripts.OnClick()
+Eq(casts[1][1], "Smelt Copper", "Start casts")
+Eq(panel.start.label, "Stop", "becomes Stop")
+panel.start.scripts.OnClick()
+Eq(M.running, nil, "Stop stops")
+
+this = panel.materialRows[1]
+this.scripts.OnEnter()
+panel.clear.scripts.OnClick()
+Eq(table.getn(M.Tasks("Blacksmithing")), 0, "Clear empties the list")
+Eq(panel.taskRows[1].shown, false, "rows hide")
+
+-- The Tasks button makes way for Atlas-CFM's
+local anchored
+pfUITradesButton1.SetPoint = function(_, _, relative) anchored = relative end
+TradeSkillFrameAtlasButton = NewFrame("Button")
+arg1 = 1
+pfUITradesButton1.scripts.OnUpdate()
+Eq(anchored, TradeSkillFrameAtlasButton, "sits left of Atlas-CFM's button")
+
+-- Beast Training has no profession line, so no button or panel
+CraftFrame.scripts.OnShow()
+Eq(pfUITradesButton2.shown, false, "no Tasks button on Beast Training")
+
+print(passed .. " passed, " .. failures .. " failed")
+os.exit(failures == 0 and 0 or 1)
