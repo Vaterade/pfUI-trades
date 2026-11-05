@@ -1,0 +1,104 @@
+name: Release
+
+# Makes a GitHub release for every new version that reaches main.
+#
+# To release: raise "## Version" in pfUI-trades.toc, add a matching section to
+# CHANGELOG.md, and push to main. A push to main reads the version, checks the
+# addon and, if the tag vX.Y.Z doesn't exist yet, creates it. The run on that tag
+# packages the addon and publishes the release. A push that leaves the version
+# alone finds its tag already there and does nothing.
+#
+# Adapted from Torchlite-bit/Aegis_Courier's release.yml. Three things look
+# odd but are needed; each one otherwise gives a green run that publishes nothing:
+#
+#   1. A tag pushed with GITHUB_TOKEN doesn't start a workflow run, so the
+#      branch run starts the tag run itself with `gh workflow run`.
+#   2. The packager won't package a branch build whose commit is tagged
+#      ("Found future tag"), so it only runs on tag refs.
+#   3. Without RELEASE_NOTES.md the packager uses the whole commit history as
+#      the release notes, so the tag run writes that file from CHANGELOG.md.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # The packager reads tags and history; a shallow checkout has neither.
+          fetch-depth: 0
+
+      # A broken build is never tagged.
+      - name: Install Lua
+        if: github.ref_type == 'branch'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4 luajit
+
+      - name: Check syntax and run tests
+        if: github.ref_type == 'branch'
+        run: |
+          find . -name '*.lua' -not -path '*/Libs/*' -print0 | xargs -0 -n1 luac5.4 -p
+          luajit tools/test.lua
+
+      - name: Tag the version, if it is new
+        if: github.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^## Version:[[:space:]]*\([^[:space:]]*\).*/\1/p' pfUI-trades.toc | tr -d '\r')
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::No MAJOR.MINOR.PATCH version in pfUI-trades.toc (got '$version')"
+            exit 1
+          fi
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag is released already; nothing to do."
+            exit 0
+          fi
+          if ! grep -q "^## \[$version\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$version]' section"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "pfUI-trades $version"
+          git push origin "$tag"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$tag"
+          echo "Tagged $tag; it is packaged in the run started on the tag."
+
+      - name: Release notes from CHANGELOG.md
+        if: github.ref_type == 'tag'
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # From this version's heading to the next heading or the link list at the end.
+          awk -v head="## [$version]" '
+            index($0, head) == 1 { on = 1; print; next }
+            on && (/^## \[/ || /^\[[^]]*\]: /) { exit }
+            on { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "pfUI-trades $version" > RELEASE_NOTES.md
+          fi
+          cat RELEASE_NOTES.md
+
+      - name: Package and release to GitHub
+        if: github.ref_type == 'tag'
+        uses: BigWigsMods/packager@v2
+        env:
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}

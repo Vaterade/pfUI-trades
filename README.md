@@ -4,6 +4,13 @@ An external module for [pfUI](https://github.com/brues-code/pfUI) that adds a ta
 materials overview beside the game's own profession windows. It needs pfUI, and so ClassicAPI.
 Altoholic is optional. Don't run it alongside AdvancedTradeSkillWindow2, which uses the same window.
 
+## Installing
+
+Download `pfUI-trades-vX.Y.Z-classic.zip` from the latest release on the
+[Releases page](https://github.com/Vaterade/pfUI-trades/releases) and unzip it into
+`Interface/AddOns/`, so there is a `pfUI-trades` folder with `pfUI-trades.toc` directly inside.
+Changes in each version are in `CHANGELOG.md`.
+
 ## Using it
 
 Press **Queue** at the bottom left of the recipe details.
