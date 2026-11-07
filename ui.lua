@@ -84,7 +84,8 @@ pfUI:RegisterModule("trades", function()
 
   -- Where the window's own parts are, measured down from its top edge: the middle of its title
   -- and of its rank bar, the top of the recipe details pane, the bottom of the recipe list pane,
-  -- and where the frame ends below the Exit button. pfUI's skin moves them, so they are read
+  -- and where the frame ends: its own bottom with pfUI's skin (whose border is drawn outside the
+  -- frame, as the panel's is), else a little under the Exit button, where the art ends. pfUI's skin moves them, so they are read
   -- from the window rather than assumed; nil until the window has been laid out.
   local function Guides()
     local frame = _G[M.windows[ctx].frame]
@@ -106,7 +107,11 @@ pfUI:RegisterModule("trades", function()
       frame = Bottom(_G[ctx .. "CancelButton"]),
     }
     if not (g.title and g.bar and g.top and g.bottom) then return nil end
-    g.frame = g.frame and (g.frame - 7) or Bottom(frame)
+    if type(frame.backdrop) == "table" or not g.frame then
+      g.frame = Bottom(frame)
+    else
+      g.frame = g.frame - 7
+    end
     return g
   end
 
@@ -180,13 +185,6 @@ pfUI:RegisterModule("trades", function()
       end
     end
 
-    if plan.alts == "off" then
-      panel.source:SetText(T["Altoholic: turned off, alts not counted"])
-    elseif plan.alts == "missing" then
-      panel.source:SetText(T["Altoholic: not loaded, alts not counted"])
-    else
-      panel.source:SetText(string.format(T["Altoholic: %d alts on this realm"], plan.alts))
-    end
   end
 
   local missing -- the Missing Recipes panel, made when first opened
@@ -434,8 +432,6 @@ pfUI:RegisterModule("trades", function()
     for i = 1, MAX_ROWS do panel.materialRows[i] = CreateMaterialRow(i) end
 
     local taskPane, materialPane = Pane(panel), Pane(panel)
-    panel.source = Font(materialPane) -- the last line of the materials pane
-    panel.source:SetTextColor(.7, .7, .7)
     panel.materialVisible = 10
 
     -- y values measured down from the panel's top (see PlaceBeside)
@@ -458,10 +454,8 @@ pfUI:RegisterModule("trades", function()
       materialPane:Span(materialTop, y.bottom)
       header:ClearAllPoints()
       header:SetPoint("TOPLEFT", panel, "TOPLEFT", LIST_X, materialTop - PANE_X)
-      panel.source:ClearAllPoints()
-      panel.source:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", LIST_X + 2, y.bottom + PANE_X + 2)
-      -- what is left between the header and the source line
-      local room = (materialTop - PANE_X - ROW) - (y.bottom + PANE_X + ROW)
+      -- what is left under the header
+      local room = (materialTop - PANE_X - ROW) - (y.bottom + PANE_X)
       panel.materialVisible = math.max(1, math.min(MAX_ROWS, math.floor(room / ROW)))
       panel.materialScroll:SetHeight(panel.materialVisible * ROW)
       Refresh()

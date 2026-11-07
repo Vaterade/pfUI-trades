@@ -697,7 +697,6 @@ Eq(panel.materialRows[1].name.text, "Copper Ore", "material row")
 Eq(panel.materialRows[1].need.text, "6", "needed")
 Eq(panel.materialRows[1].bags.text, "2", "in bags")
 Eq(panel.materialRows[1].bank.text, "1", "in bank")
-Eq(panel.source.text, "Altoholic: not loaded, alts not counted", "says when alts aren't counted")
 Eq(pfUITradesButton1.label, "Queue (1)", "the button shows how many")
 Eq(panel.start.label, "Start", "start label")
 
