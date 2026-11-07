@@ -654,8 +654,11 @@ pfUI:RegisterModule("trades", function()
     local list = _G[name .. "ListScrollFrame"]
     if list and not FauxScrollFrame_GetOffset(list) then FauxScrollFrame_SetOffset(list, 0) end
 
+    -- Queue and Missing take turns: opening one closes the other
     local toggle = Button(frame, T["Queue"], 70, 22, function()
-      SetPanelShown(not (panel and panel:IsShown()))
+      local open = not (panel and panel:IsShown())
+      if open then SetMissingShown(false) end
+      SetPanelShown(open)
     end)
     -- Bottom left of the recipe details, level with Aegis_Exchange's button in the bottom right
     toggle:SetPoint("BOTTOMLEFT", _G[name .. "DetailScrollFrame"], "BOTTOMLEFT", 8, 8)
@@ -664,7 +667,9 @@ pfUI:RegisterModule("trades", function()
 
     -- the recipes this character hasn't learned yet, beside the queue
     local missingToggle = Button(frame, T["Missing"], 70, 22, function()
-      SetMissingShown(not (missing and missing:IsShown()))
+      local open = not (missing and missing:IsShown())
+      if open then SetPanelShown(false) end
+      SetMissingShown(open)
     end)
     missingToggle:SetPoint("LEFT", toggle, "RIGHT", 4, 0)
     missingToggle:SetFrameLevel(frame:GetFrameLevel() + 5)

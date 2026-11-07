@@ -10,7 +10,7 @@ new feature the middle one. While the first number is 0 the addon isn't consider
 
 ### Added
 - **Missing**, next to **Queue**, opens a panel listing the recipes of the open profession you
-  haven't learned, with their skill level, how they're learned or where their recipe comes from,
+  haven't learned (in place of the task list, which **Queue** brings back), with their skill level, how they're learned or where their recipe comes from,
   and their reagents. **Learnable now** narrows it to what your rank allows.
 - With pfQuest loaded, a missing recipe's item names who sells or drops it and where, and a click
   shows them on the map.

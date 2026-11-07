@@ -28,7 +28,7 @@ button. Each character has its own list per profession. A task's count is crafts
 ## Missing recipes
 
 Press **Missing**, next to **Queue**, for the recipes of the open profession you haven't learned.
-It opens a panel beside the window (beside the task list, when that's open too).
+It opens a panel beside the window in place of the task list; **Queue** brings the task list back.
 
 - Each recipe shows its skill level, green when you can learn it at your current rank, the item it
   makes, and how it's learned (trainer, quest...) or where its recipe comes from (vendor, drop...).

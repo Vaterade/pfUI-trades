@@ -747,12 +747,17 @@ Eq(M.ShowItemOnMap(6053) and mapped, 1519, "the item goes on pfQuest's map")
 pfDB, pfDatabase, pfMap = nil, nil, nil
 
 -- the panel
+local queueWasOpen = panel.shown
+if not panel.shown then pfUITradesButton1.scripts.OnClick() end	-- Queue open first: Missing replaces it
+Eq(panel.shown, true, "the queue panel is open")
 GetItemInfo = function() end
 GetItemQualityColor = function() return 1, 1, 1, "|cffffffff" end
 pfUITradesButton2.scripts.OnClick()
 local mp = pfUITradesMissingPanel
 Eq(mp ~= nil and mp.shown, true, "the Missing button opens the missing panel")
 Eq(pfUITrades_DB.missingOpen, 1, "and that's remembered")
+Eq(panel.shown, false, "opening Missing closes the queue panel")
+Eq(pfUITrades_DB.open, nil, "and the queue panel isn't remembered as open")
 Eq(rawget(mp.rows[1], "entry") ~= nil, true, "it lists the missing recipes")
 -- the stub window gives no rank, so nothing can be learned now
 mp.only.scripts.OnClick()
@@ -760,8 +765,14 @@ Eq(rawget(mp.rows[1], "entry"), nil, "Learnable now narrows to what the rank all
 Eq(mp.empty.text, "Nothing more to learn at this skill.", "and says so")
 mp.only.scripts.OnClick()
 Eq(rawget(mp.rows[1], "entry") ~= nil, true, "All recipes lists them again")
+pfUITradesButton1.scripts.OnClick()
+Eq(panel.shown and not mp.shown, true, "opening Queue closes the missing panel")
+Eq(pfUITrades_DB.missingOpen, nil, "and forgets it was open")
+pfUITradesButton1.scripts.OnClick()
 pfUITradesButton2.scripts.OnClick()
-Eq(mp.shown, false, "and closes again")
+pfUITradesButton2.scripts.OnClick()
+Eq(mp.shown, false, "and Missing closes again")
+if queueWasOpen then pfUITradesButton1.scripts.OnClick() end	-- back as the tests below expect
 
 this = panel.materialRows[1]
 this.scripts.OnEnter()
