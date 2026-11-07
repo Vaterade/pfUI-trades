@@ -6,19 +6,25 @@ the version in `pfUI-tradeskill.toc` into the GitHub release notes, so write it 
 Versions follow [semantic versioning](https://semver.org/): a fix raises the last number, a
 new feature the middle one. While the first number is 0 the addon isn't considered stable yet.
 
-## [Unreleased]
+## [0.2.0] - 2026-11-07
 
 ### Added
 - **Missing**, next to **Queue**, opens a panel listing the recipes of the open profession you
-  haven't learned (in place of the task list, which **Queue** brings back), with their skill level, how they're learned or where their recipe comes from,
-  and their reagents. Tick **Learnable now** to narrow it to what your rank allows.
-- With pfQuest loaded, a missing recipe's item names who sells or drops it and where, and a click
-  shows them on the map.
+  haven't learned, with their skill level, how they're learned or where their recipe comes
+  from, and their reagents. Tick **Learnable now** to narrow it to what your rank allows. It
+  replaces the Gromissingcrafts addon.
+- With pfQuest loaded, a missing recipe's item names who sells or drops it and where, and a
+  click shows them on the map.
+- A red **X** in each panel's corner closes it.
 - Other addons can queue crafts for any character on the realm (Altoholic's Recipes page does).
 
 ### Changed
-- Renamed from pfUI-trades to pfUI-tradeskill. Rename `pfUI-trades.lua` to `pfUI-tradeskill.lua` in
-  your `WTF` saved variables to keep your task lists.
+- Renamed from pfUI-trades to pfUI-tradeskill. Rename `pfUI-trades.lua` to
+  `pfUI-tradeskill.lua` in your `WTF` saved variables to keep your task lists.
+- **Queue** and **Missing** take turns beside the window: opening one closes the other.
+- The panels line up with the profession window: the same height, title and button rows level
+  with the window's, and darker panes behind the lists like the window's own.
+- The "Altoholic: N alts" line under the materials is gone; the table has that row instead.
 
 ## [0.1.0] - 2026-11-05
 
@@ -34,4 +40,5 @@ The first release.
 - A bank reminder listing materials to take out for your tasks.
 - An alt reminder at the bank and mailbox listing materials to send to your other characters.
 
+[0.2.0]: https://github.com/Vaterade/pfUI-tradeskill/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Vaterade/pfUI-tradeskill/releases/tag/v0.1.0
