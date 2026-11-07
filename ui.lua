@@ -403,7 +403,11 @@ pfUI:RegisterModule("trades", function()
   -- its vendors, mobs and chests and their zones, and a click shows them on the map.
 
   M.T = T
-  local MISSING_ROWS = 22
+  -- the panel is as tall as the queue panel; the list starts under the button and ends a
+  -- margin above the bottom, and is narrow enough for its scroll bar to stay inside
+  local MISSING_HEIGHT, MISSING_TOP, MISSING_BOTTOM = 440, 54, 14
+  local MISSING_ROWS = math.floor((MISSING_HEIGHT - MISSING_TOP - MISSING_BOTTOM) / ROW)
+  local MISSING_WIDTH = WIDTH - 36
   local missingList, missingShown, missingRank = {}, {}, 0
   local learnableOnly
 
@@ -454,7 +458,7 @@ pfUI:RegisterModule("trades", function()
 
   local function CreateMissingRow(i)
     local row = CreateFrame("Button", nil, missing)
-    row:SetWidth(WIDTH - 32)
+    row:SetWidth(MISSING_WIDTH)
     row:SetHeight(ROW)
     row:SetPoint("TOPLEFT", missing.scroll, "TOPLEFT", 0, -(i - 1) * ROW)
     row:SetScript("OnEnter", MissingRowTooltip)
@@ -554,7 +558,7 @@ pfUI:RegisterModule("trades", function()
   local function CreateMissingPanel()
     missing = CreateFrame("Frame", "pfUITradesMissingPanel", UIParent)
     missing:SetWidth(WIDTH)
-    missing:SetHeight(440)
+    missing:SetHeight(MISSING_HEIGHT)
     missing:EnableMouse(true)
     CreateBackdrop(missing, nil, nil, .75)
     CreateBackdropShadow(missing)
@@ -579,9 +583,9 @@ pfUI:RegisterModule("trades", function()
     missing.only:SetPoint("TOPLEFT", 8, -28)
 
     missing.scroll = CreateFrame("ScrollFrame", "pfUITradesMissingScroll", missing, "FauxScrollFrameTemplate")
-    missing.scroll:SetWidth(WIDTH - 32)
+    missing.scroll:SetWidth(MISSING_WIDTH)
     missing.scroll:SetHeight(MISSING_ROWS * ROW)
-    missing.scroll:SetPoint("TOPLEFT", 8, -54)
+    missing.scroll:SetPoint("TOPLEFT", 8, -MISSING_TOP)
     FauxScrollFrame_SetOffset(missing.scroll, 0)
     missing.scroll:SetScript("OnVerticalScroll", function()
       FauxScrollFrame_OnVerticalScroll(ROW, DrawMissing)
