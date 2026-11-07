@@ -1,7 +1,7 @@
 # Read by BigWigsMods/packager in .github/workflows/release.yml.
 # The repository root is the addon folder, so package-as only names the folder the
 # zip unpacks to. It must match the .toc's name or the client won't load the addon.
-package-as: pfUI-trades
+package-as: pfUI-tradeskill
 
 # The release workflow writes this file from this version's section of CHANGELOG.md.
 # Without it the packager uses the whole commit log as the release notes.

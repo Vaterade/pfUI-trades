@@ -1,7 +1,7 @@
 # Changelog
 
 Each release gets a section here, newest first. The release workflow copies the section for
-the version in `pfUI-trades.toc` into the GitHub release notes, so write it for players.
+the version in `pfUI-tradeskill.toc` into the GitHub release notes, so write it for players.
 
 Versions follow [semantic versioning](https://semver.org/): a fix raises the last number, a
 new feature the middle one. While the first number is 0 the addon isn't considered stable yet.
@@ -20,4 +20,4 @@ The first release.
 - A bank reminder listing materials to take out for your tasks.
 - An alt reminder at the bank and mailbox listing materials to send to your other characters.
 
-[0.1.0]: https://github.com/Vaterade/pfUI-trades/releases/tag/v0.1.0
+[0.1.0]: https://github.com/Vaterade/pfUI-tradeskill/releases/tag/v0.1.0

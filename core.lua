@@ -9,7 +9,7 @@ pfUITrades = {}
 local M = pfUITrades
 
 local function Say(text)
-  DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffUI|cffaaaaaa Trades:|r " .. text)
+  DEFAULT_CHAT_FRAME:AddMessage("|cff33ffccpf|cffffffffUI|cffaaaaaa Tradeskill:|r " .. text)
 end
 M.Say = Say
 

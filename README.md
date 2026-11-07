@@ -1,4 +1,4 @@
-# pfUI-trades
+# pfUI-tradeskill
 
 An external module for [pfUI](https://github.com/brues-code/pfUI) that adds a task list and a
 materials overview beside the game's own profession windows. It needs pfUI, and so ClassicAPI.
@@ -6,9 +6,9 @@ Altoholic is optional. Don't run it alongside AdvancedTradeSkillWindow2, which u
 
 ## Installing
 
-Download `pfUI-trades-vX.Y.Z-classic.zip` from the latest release on the
-[Releases page](https://github.com/Vaterade/pfUI-trades/releases) and unzip it into
-`Interface/AddOns/`, so there is a `pfUI-trades` folder with `pfUI-trades.toc` directly inside.
+Download `pfUI-tradeskill-vX.Y.Z-classic.zip` from the latest release on the
+[Releases page](https://github.com/Vaterade/pfUI-tradeskill/releases) and unzip it into
+`Interface/AddOns/`, so there is a `pfUI-tradeskill` folder with `pfUI-tradeskill.toc` directly inside.
 Changes in each version are in `CHANGELOG.md`.
 
 ## Using it

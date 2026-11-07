@@ -451,7 +451,7 @@ pfUI:RegisterModule("trades", function()
     end
 
     if not pfUI.gui then return end
-    pfUI.gui.CreateGUIEntry(T["Thirdparty"], T["Trades"], function()
+    pfUI.gui.CreateGUIEntry(T["Thirdparty"], T["Tradeskill"], function()
       pfUI.gui.CreateConfig(M.onChange, T["Count materials on alts with Altoholic"], C.trades, "altoholic", "checkbox")
       pfUI.gui.CreateConfig(M.onChange, T["Count materials in the mail"], C.trades, "mail", "checkbox")
       pfUI.gui.CreateConfig(M.onChange, T["Remind me at the bank to take materials"], C.trades, "bankreminder", "checkbox")
