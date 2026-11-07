@@ -643,7 +643,7 @@ function GetCraftDisplaySkillLine() return nil end
 T = setmetatable({}, { __index = function(_, key) return key end })
 C = pfUI_config
 C.global = { font_size = 12 }
-for _, name in ipairs({ "SkinButton", "SkinArrowButton", "SkinScrollbar", "SkinCloseButton", "CreateBackdropShadow", "FauxScrollFrame_OnVerticalScroll" }) do
+for _, name in ipairs({ "SkinButton", "SkinArrowButton", "SkinScrollbar", "SkinCloseButton", "SkinCheckbox", "CreateBackdropShadow", "FauxScrollFrame_OnVerticalScroll" }) do
   _G[name] = function() end
 end
 -- pfUI's makes the backdrop a child frame, frame.backdrop
@@ -765,9 +765,12 @@ Eq(panel.shown, false, "opening Missing closes the queue panel")
 Eq(pfUITrades_DB.open, nil, "and the queue panel isn't remembered as open")
 Eq(rawget(mp.rows[1], "entry") ~= nil, true, "it lists the missing recipes")
 -- the stub window gives no rank, so nothing can be learned now
+mp.only.GetChecked = function() return 1 end	-- a click ticks the box before OnClick
+this = mp.only
 mp.only.scripts.OnClick()
 Eq(rawget(mp.rows[1], "entry"), nil, "Learnable now narrows to what the rank allows")
 Eq(mp.empty.text, "Nothing more to learn at this skill.", "and says so")
+mp.only.GetChecked = function() return nil end
 mp.only.scripts.OnClick()
 Eq(rawget(mp.rows[1], "entry") ~= nil, true, "All recipes lists them again")
 -- the panel follows the window's own layout once it can be measured: a window whose top is

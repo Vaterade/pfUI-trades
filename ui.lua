@@ -639,7 +639,7 @@ pfUI:RegisterModule("trades", function()
       missing.title:SetText(T["Missing Recipes"])
       missing.empty:SetText(T["No recipe list for this profession."])
     end
-    missing.only:SetText(learnableOnly and T["All recipes"] or T["Learnable now"])
+    missing.only:SetChecked(learnableOnly and 1 or nil)
     FauxScrollFrame_SetOffset(missing.scroll, 0)
     DrawMissing()
   end
@@ -666,8 +666,25 @@ pfUI:RegisterModule("trades", function()
 
     missing.close = CloseButton(missing, function() SetMissingShown(false) end)
 
-    missing.only = Button(missing, T["Learnable now"], 100, 20, function()
-      learnableOnly = not learnableOnly
+    -- a tick box like the window's own "Have materials" and "Improves skill": the same skin,
+    -- size and gold label
+    serial = serial + 1
+    local checkName = "pfUITradesButton" .. serial
+    missing.only = CreateFrame("CheckButton", checkName, missing, "UICheckButtonTemplate")
+    local like = _G[ctx .. "MatsCheckButton"] or _G[ctx .. "FrameMatsCheckButton"]
+    local size = like and like:GetWidth() or 24
+    if not size or size <= 0 then size = 24 end
+    missing.only:SetWidth(size)
+    missing.only:SetHeight(size)
+    SkinCheckbox(missing.only)
+    local label = _G[checkName .. "Text"] or Font(missing.only)
+    label:ClearAllPoints()
+    label:SetPoint("LEFT", missing.only, "RIGHT", 0, 1)
+    label:SetFont(pfUI.font_default, C.global.font_size, "OUTLINE")
+    label:SetText(T["Learnable now"])
+    label:SetTextColor(1, .82, 0)
+    missing.only:SetScript("OnClick", function()
+      learnableOnly = this:GetChecked() and true or false
       RefreshMissing()
     end)
 
@@ -694,8 +711,9 @@ pfUI:RegisterModule("trades", function()
     function missing.Layout(y)
       missing.title:ClearAllPoints()
       missing.title:SetPoint("CENTER", missing, "TOP", 0, y.title)
+      -- pfUI draws the box 4 in from the button's edges: line the box up with the pane
       missing.only:ClearAllPoints()
-      missing.only:SetPoint("LEFT", missing, "TOPLEFT", LIST_X - 2, y.bar)
+      missing.only:SetPoint("LEFT", missing, "TOPLEFT", PANE_X - 4, y.bar)
       -- one pane from the top of the window's details pane to the bottom of its recipe list
       pane:Span(y.top, y.bottom)
       missing.scroll:ClearAllPoints()

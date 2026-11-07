@@ -33,7 +33,7 @@ It opens a panel beside the window in place of the task list; **Queue** brings t
 - Each recipe shows its skill level, green when you can learn it at your current rank, the item it
   makes, and how it's learned (trainer, quest...) or where its recipe comes from (vendor, drop...).
 - Hover a recipe for its reagents and any level it needs.
-- **Learnable now** narrows the list to what your rank allows; press it again for all recipes.
+- Tick **Learnable now** to narrow the list to what your rank allows.
 - With [pfQuest](https://github.com/brues-code/pfQuest) loaded, hovering the recipe item at the
   right of a line names the vendors, mobs and chests it comes from and their zones, and clicking it
   shows them on the world map. [pfQuest-octo-plus](https://github.com/Salahaja/pfQuest-octo-plus)
