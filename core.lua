@@ -301,6 +301,75 @@ function M.AddSelected(ctx, count)
   return task
 end
 
+-- Adds crafts to any character's list on this realm; Altoholic's Recipes page uses it to queue
+-- work for an alt. The task is shaped like AddSelected's, but what Altoholic doesn't record
+-- (the spell ID, how many one craft makes) may be missing or guessed, so it is marked stale and
+-- RefreshTasks fills it in from the recipe the next time that character opens the profession.
+-- Until then a cast still finds it by name.
+function M.QueueFor(character, profession, task, count)
+  if not character or not profession or not task or not task.name then return end
+  count = count or 1
+  local tasks
+  if character == UnitName("player") then
+    tasks = M.Tasks(profession)
+  else
+    local account = M.AccountTasks()
+    account[character] = account[character] or {}
+    account[character][profession] = account[character][profession] or {}
+    tasks = account[character][profession]
+  end
+
+  for _, existing in ipairs(tasks) do
+    if existing.name == task.name then
+      existing.count = existing.count + count
+      Changed()
+      return existing
+    end
+  end
+
+  task.count = count
+  task.reagents = task.reagents or {}
+  task.stale = true
+  table.insert(tasks, task)
+  Changed()
+  return task
+end
+
+-- How many crafts of a recipe are on a character's list, for Altoholic to show.
+function M.QueuedFor(character, profession, name)
+  local account = M.AccountTasks()
+  local tasks = account[character] and account[character][profession]
+  for _, task in ipairs(tasks or {}) do
+    if task.name == name then return task.count end
+  end
+  return 0
+end
+
+-- Fills in the tasks QueueFor added from the recipe itself, once its window is open on the
+-- character the list belongs to. Only rows already shown are read, so the player's filters and
+-- folded headers stay as they are; a hidden recipe is filled in on a later opening.
+function M.RefreshTasks(ctx)
+  local window = M.windows[ctx]
+  if not window or window.Linked() then return end
+  local profession = window.Profession()
+  local tasks = profession and M.MyTasks()[profession]
+  if not tasks then return end
+  local changed
+  for _, task in ipairs(tasks) do
+    if task.stale then
+      local i = FindRow(window, task.name)
+      local fresh = i and window.Read(i)
+      if fresh then
+        task.spell, task.icon, task.item = fresh.spell, fresh.icon, fresh.item
+        task.made, task.reagents = fresh.made, fresh.reagents
+        task.stale = nil
+        changed = true
+      end
+    end
+  end
+  if changed then Changed() end
+end
+
 local function Position(tasks, task)
   for i, candidate in ipairs(tasks) do
     if candidate == task then return i end
@@ -790,6 +859,17 @@ driver:RegisterEvent("UNIT_SPELLCAST_FAILED")
 driver:RegisterEvent("UNIT_SPELLCAST_FAILED_QUIET")
 driver:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
 driver:RegisterEvent("BAG_UPDATE_DELAYED")
+
+-- tasks queued from Altoholic are filled in once their profession's window has its rows
+local refresher = CreateFrame("Frame")
+refresher:RegisterEvent("TRADE_SKILL_SHOW")
+refresher:RegisterEvent("TRADE_SKILL_UPDATE")
+refresher:RegisterEvent("CRAFT_SHOW")
+refresher:RegisterEvent("CRAFT_UPDATE")
+refresher:SetScript("OnEvent", function()
+  local ok, failure = pcall(M.RefreshTasks, string.find(event, "^CRAFT") and "Craft" or "TradeSkill")
+  if not ok then Say("couldn't fill in a queued task: " .. tostring(failure)) end
+end)
 driver:RegisterEvent("PLAYER_LOGIN")
 driver:RegisterEvent("BANKFRAME_OPENED")
 driver:RegisterEvent("MAIL_SHOW")

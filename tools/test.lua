@@ -200,6 +200,29 @@ M.AddSelected("TradeSkill", 1)
 Eq(M.Tasks("Blacksmithing")[1].reagents[1].name, "Fetched " .. ORE, "uncached reagent still adds")
 GetTradeSkillReagentInfo = realInfo
 
+-- Queued from Altoholic for another character, then filled in when they open the window
+Reset()
+M.QueueFor("Alt", "Blacksmithing", { name = "Copper Blade", item = BLADE, made = 1,
+  reagents = { { id = BAR, name = "Copper Bar", count = 4 } } }, 2)
+M.QueueFor("Alt", "Blacksmithing", { name = "Copper Blade", item = BLADE, reagents = {} }, 1)
+local altTasks = pfUITrades_Tasks.Realm.Alt.Blacksmithing
+Eq(table.getn(altTasks), 1, "queueing for an alt twice merges")
+Eq(altTasks[1].count, 3, "queued count")
+Eq(M.QueuedFor("Alt", "Blacksmithing", "Copper Blade"), 3, "QueuedFor reads it back")
+Eq(M.Tasks("Blacksmithing")[1], nil, "the logged-in character's list is untouched")
+
+-- the same, for the logged-in character, then the window opens
+M.QueueFor("Main", "Blacksmithing", { name = "Copper Blade", item = BLADE, made = 1,
+  reagents = { { id = BAR, name = "Copper Bar", count = 4 } } }, 1)
+local queued = M.Tasks("Blacksmithing")[1]
+Eq(queued.stale, true, "a queued task waits to be filled in")
+Eq(queued.spell, nil, "Altoholic has no spell ID")
+M.RefreshTasks("TradeSkill")
+Eq(queued.spell, 1003, "the spell ID comes from the open window")
+Eq(table.getn(queued.reagents), 2, "and the full reagent list")
+Eq(queued.stale, nil, "it is no longer stale")
+Eq(queued.count, 1, "the count stays")
+
 -- A cast counts against the task with its spell ID, whatever else shares the name
 Reset()
 pfUITrades_Tasks = { ["Realm|Horde"] = { Main = {
