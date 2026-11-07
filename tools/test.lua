@@ -733,6 +733,28 @@ Eq(M.RecipeDB, Altoholic.RecipeDB, "Altoholic's recipe list is shared")
 Eq(M.RecipeName("Smelt Tin"), "Zinn verhütten", "and its translations")
 M.RecipeDB, M.RecipeNamesFrom, Altoholic = ownDB, nil, nil
 
+-- with Altoholic loaded, its copy of the shared code runs; without it, this addon's own
+Eq(M.sharedWithAltoholic, nil, "alone, it uses its own code")
+local own = {}
+for _, k in ipairs({ "HasItemSources", "ItemSources", "AddItemSources", "ShowItemOnMap", "EnglishProfession", "RecipeKey", "ParseReagents" }) do
+  own[k] = M[k]
+end
+local calls = {}
+Altoholic = {}
+for k in pairs(own) do
+  Altoholic[k] = function(self, a) table.insert(calls, k) return k == "ParseReagents" and { { 1, 2 } } or "altoholic" end
+end
+Eq(M.UseAltoholic(), true, "with Altoholic loaded it switches to Altoholic's code")
+Eq(M.ItemSources(6053), "altoholic", "item sources come from Altoholic")
+Eq(M.ShowItemOnMap(6053), "altoholic", "and so does the map")
+Eq(M.ParseReagents("1:2")[1][2], 2, "and the reagent reader")
+Eq(table.getn(calls), 3, "each call went to Altoholic")
+Altoholic = {}
+Eq(M.UseAltoholic(), false, "an Altoholic without that code (no ClassicAPI) isn't used")
+Altoholic = nil
+for k, f in pairs(own) do M[k] = f end
+M.sharedWithAltoholic = nil
+
 -- where a recipe item comes from, with pfQuest's database
 Eq(M.HasItemSources(), false, "no sources without pfQuest")
 pfDB = {

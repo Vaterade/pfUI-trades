@@ -6,6 +6,13 @@ the version in `pfUI-tradeskill.toc` into the GitHub release notes, so write it 
 Versions follow [semantic versioning](https://semver.org/): a fix raises the last number, a
 new feature the middle one. While the first number is 0 the addon isn't considered stable yet.
 
+## [Unreleased]
+
+### Changed
+- With Altoholic loaded, its copy of the shared code (vendors, drops and the map for missing
+  recipes, and the recipe name helpers) is used, as its recipe list already was, so only one
+  copy runs.
+
 ## [0.2.0] - 2026-11-07
 
 ### Added

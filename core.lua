@@ -905,9 +905,10 @@ function M.RecipeName(english)
 end
 
 -- the client writes some of Turtle's names with a curly apostrophe, the list a straight one
-local function Key(name)
+function M.RecipeKey(name)
   return (string.gsub(name or "", "\226\128\153", "'"))
 end
+local function Key(name) return M.RecipeKey(name) end
 
 function M.EnglishProfession(profession)
   for english in pairs(M.RecipeDB or {}) do
@@ -1080,3 +1081,27 @@ function M.ShowItemOnMap(itemID)
   pfMap:ShowMapID(best)
   return true
 end
+
+-- [ Shared with Altoholic ]
+-- Altoholic carries the same recipe list, the same pfQuest reading and the same recipe name
+-- helpers, and loads first (it is an OptionalDep). With it loaded, its copies run and the ones
+-- above are only the fallback, so one copy of each is in use. recipes.lua already takes its
+-- list and translations. M.Missing stays this addon's own: it reads the open window, where
+-- Altoholic reads saved data.
+function M.UseAltoholic()
+  local A = Altoholic
+  if not (A and A.ItemSources and A.AddItemSources and A.ShowItemOnMap and A.HasItemSources
+      and A.EnglishProfession and A.RecipeKey and A.ParseReagents) then
+    return false
+  end
+  M.HasItemSources = function() return A:HasItemSources() end
+  M.ItemSources = function(itemID) return A:ItemSources(itemID) end
+  M.AddItemSources = function(tooltip, itemID, max) return A:AddItemSources(tooltip, itemID, max) end
+  M.ShowItemOnMap = function(itemID) return A:ShowItemOnMap(itemID) end
+  M.EnglishProfession = function(profession) return A:EnglishProfession(profession) end
+  M.RecipeKey = function(name) return A:RecipeKey(name) end
+  M.ParseReagents = function(reagents) return A:ParseReagents(reagents) end
+  M.sharedWithAltoholic = true
+  return true
+end
+M.UseAltoholic()
