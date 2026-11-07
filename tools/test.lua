@@ -643,9 +643,11 @@ function GetCraftDisplaySkillLine() return nil end
 T = setmetatable({}, { __index = function(_, key) return key end })
 C = pfUI_config
 C.global = { font_size = 12 }
-for _, name in ipairs({ "SkinButton", "SkinArrowButton", "SkinScrollbar", "CreateBackdrop", "CreateBackdropShadow", "FauxScrollFrame_OnVerticalScroll" }) do
+for _, name in ipairs({ "SkinButton", "SkinArrowButton", "SkinScrollbar", "CreateBackdropShadow", "FauxScrollFrame_OnVerticalScroll" }) do
   _G[name] = function() end
 end
+-- pfUI's makes the backdrop a child frame, frame.backdrop
+function CreateBackdrop(frame) frame.backdrop = rawget(frame, "backdrop") or CreateFrame("Frame", nil, frame) end
 function FauxScrollFrame_Update() end
 function FauxScrollFrame_GetOffset(frame) return rawget(frame, "offset") end
 function FauxScrollFrame_SetOffset(frame, offset) frame.offset = offset end

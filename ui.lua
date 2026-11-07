@@ -63,6 +63,17 @@ pfUI:RegisterModule("trades", function()
     return scroll
   end
 
+  -- A darker pane behind a list, as pfUI's skin puts behind the profession window's recipe list
+  -- and details: a second backdrop over the panel's, from top's top left to bottom's bottom
+  -- right, with room for the scroll bar.
+  local function Pane(parent, top, bottom)
+    local pane = CreateFrame("Frame", nil, parent)
+    CreateBackdrop(pane, nil, nil, .75)
+    pane.backdrop:SetPoint("TOPLEFT", top, "TOPLEFT", -5, 5)
+    pane.backdrop:SetPoint("BOTTOMRIGHT", bottom, "BOTTOMRIGHT", 26, -5)
+    return pane
+  end
+
   local function Profession()
     return ctx and M.windows[ctx].Profession()
   end
@@ -339,7 +350,7 @@ pfUI:RegisterModule("trades", function()
     panel.taskScroll = Scroller("pfUITradesTaskScroll", TASK_ROWS, Refresh)
     panel.taskScroll:SetPoint("TOPLEFT", 8, -54)
 
-    panel.empty = Font(panel)
+    panel.empty = Font(panel.taskScroll) -- on the list, above its pane
     panel.empty:SetPoint("TOPLEFT", panel.taskScroll, "TOPLEFT", 2, -4)
 
     panel.taskRows = {}
@@ -366,6 +377,9 @@ pfUI:RegisterModule("trades", function()
 
     panel.materialRows = {}
     for i = 1, MATERIAL_ROWS do panel.materialRows[i] = CreateMaterialRow(i) end
+
+    Pane(panel, panel.taskScroll, panel.taskScroll)
+    Pane(panel, header, panel.materialScroll)
 
     panel.source = Font(panel)
     panel.source:SetPoint("BOTTOMLEFT", 10, 10)
@@ -592,12 +606,14 @@ pfUI:RegisterModule("trades", function()
     end)
     SkinScrollbar(_G["pfUITradesMissingScrollScrollBar"])
 
-    missing.empty = Font(missing)
+    missing.empty = Font(missing.scroll) -- on the list, above its pane
     missing.empty:SetPoint("TOPLEFT", missing.scroll, "TOPLEFT", 2, -4)
     missing.empty:SetTextColor(.7, .7, .7)
 
     missing.rows = {}
     for i = 1, MISSING_ROWS do missing.rows[i] = CreateMissingRow(i) end
+
+    Pane(missing, missing.scroll, missing.scroll)
   end
 
   local function SetMissingShown(shown)
