@@ -643,7 +643,7 @@ function GetCraftDisplaySkillLine() return nil end
 T = setmetatable({}, { __index = function(_, key) return key end })
 C = pfUI_config
 C.global = { font_size = 12 }
-for _, name in ipairs({ "SkinButton", "SkinArrowButton", "SkinScrollbar", "CreateBackdropShadow", "FauxScrollFrame_OnVerticalScroll" }) do
+for _, name in ipairs({ "SkinButton", "SkinArrowButton", "SkinScrollbar", "SkinCloseButton", "CreateBackdropShadow", "FauxScrollFrame_OnVerticalScroll" }) do
   _G[name] = function() end
 end
 -- pfUI's makes the backdrop a child frame, frame.backdrop
@@ -674,6 +674,10 @@ pfUITradesButton1.scripts.OnClick()
 local panel = pfUITradesPanel
 Eq(panel ~= nil and panel.shown, true, "the Queue button opens the panel")
 Eq(pfUITrades_DB.open, 1, "and that's remembered")
+panel.close.scripts.OnClick()
+Eq(panel.shown, false, "the X closes the queue panel")
+Eq(pfUITrades_DB.open, nil, "and forgets it was open")
+pfUITradesButton1.scripts.OnClick()
 Eq(panel.mouse, true, "the panel catches clicks on its background")
 TradeSkillFrame.level = 40
 pfUITradesButton1.scripts.OnClick()
@@ -767,6 +771,10 @@ Eq(rawget(mp.rows[1], "entry"), nil, "Learnable now narrows to what the rank all
 Eq(mp.empty.text, "Nothing more to learn at this skill.", "and says so")
 mp.only.scripts.OnClick()
 Eq(rawget(mp.rows[1], "entry") ~= nil, true, "All recipes lists them again")
+mp.close.scripts.OnClick()
+Eq(mp.shown, false, "the X closes the missing panel")
+Eq(pfUITrades_DB.missingOpen, nil, "and forgets it was open")
+pfUITradesButton2.scripts.OnClick()
 pfUITradesButton1.scripts.OnClick()
 Eq(panel.shown and not mp.shown, true, "opening Queue closes the missing panel")
 Eq(pfUITrades_DB.missingOpen, nil, "and forgets it was open")

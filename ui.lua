@@ -74,6 +74,15 @@ pfUI:RegisterModule("trades", function()
     return pane
   end
 
+  -- pfUI's red close button in a panel's top right corner; onClick closes it the way its toggle does
+  local function CloseButton(parent, onClick)
+    serial = serial + 1
+    local close = CreateFrame("Button", "pfUITradesButton" .. serial, parent, "UIPanelCloseButton")
+    SkinCloseButton(close, parent.backdrop or parent, -6, -6)
+    close:SetScript("OnClick", onClick)
+    return close
+  end
+
   local function Profession()
     return ctx and M.windows[ctx].Profession()
   end
@@ -142,6 +151,7 @@ pfUI:RegisterModule("trades", function()
   end
 
   local missing -- the Missing Recipes panel, made when first opened
+  local SetPanelShown, SetMissingShown -- defined below; the panels' close buttons call them
 
   -- Puts p right of the window and of anything else hanging off its edge, like Atlas-CFM's
   -- profession tabs. ignore is left out of that, so the queue panel stays next to the window
@@ -329,6 +339,7 @@ pfUI:RegisterModule("trades", function()
 
     panel.title = Font(panel, "CENTER")
     panel.title:SetPoint("TOP", 0, -10)
+    panel.close = CloseButton(panel, function() SetPanelShown(false) end)
 
     panel.add = Button(panel, T["Add"], 70, 20, function()
       local count = 1
@@ -392,7 +403,7 @@ pfUI:RegisterModule("trades", function()
     for _, child in ipairs({ frame:GetChildren() }) do Raise(child, by) end
   end
 
-  local function SetPanelShown(shown)
+  function SetPanelShown(shown)
     M.DB().open = shown and 1 or nil
     if not shown then
       if panel then panel:Hide() end
@@ -589,6 +600,7 @@ pfUI:RegisterModule("trades", function()
 
     missing.title = Font(missing, "CENTER")
     missing.title:SetPoint("TOP", 0, -10)
+    missing.close = CloseButton(missing, function() SetMissingShown(false) end)
 
     missing.only = Button(missing, T["Learnable now"], 100, 20, function()
       learnableOnly = not learnableOnly
@@ -616,7 +628,7 @@ pfUI:RegisterModule("trades", function()
     Pane(missing, missing.scroll, missing.scroll)
   end
 
-  local function SetMissingShown(shown)
+  function SetMissingShown(shown)
     M.DB().missingOpen = shown and 1 or nil
     if not shown then
       if missing then missing:Hide() end
