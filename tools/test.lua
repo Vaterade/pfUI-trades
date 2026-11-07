@@ -771,6 +771,22 @@ Eq(rawget(mp.rows[1], "entry"), nil, "Learnable now narrows to what the rank all
 Eq(mp.empty.text, "Nothing more to learn at this skill.", "and says so")
 mp.only.scripts.OnClick()
 Eq(rawget(mp.rows[1], "entry") ~= nil, true, "All recipes lists them again")
+-- the panel follows the window's own layout once it can be measured: a window whose top is
+-- at 500, title 490-478, rank bar 460-440, details pane from 430, recipe list pane to 80
+local function At(t, b) return { GetTop = function() return t end, GetBottom = function() return b end } end
+TradeSkillFrame.GetTop = function() return 500 end
+TradeSkillFrameTitleText = At(490, 478)
+TradeSkillRankFrame = At(460, 440)
+TradeSkillDetailScrollFrame.backdrop = At(430, 200)
+TradeSkillListScrollFrame.backdrop = At(430, 80)
+TradeSkillCancelButton = At(90, 75)
+this, arg1 = mp, 1	-- OnUpdate handlers read the 1.12 globals
+mp.scripts.OnUpdate()
+Eq(mp.visible, 18, "rows fill the pane from the details' top to the list's bottom")
+Eq(mp.only.point[1], "LEFT", "the button is centred on the rank bar")
+TradeSkillFrame.GetTop, TradeSkillFrameTitleText, TradeSkillRankFrame, TradeSkillCancelButton = nil, nil, nil, nil
+TradeSkillDetailScrollFrame.backdrop, TradeSkillListScrollFrame.backdrop = nil, nil
+
 mp.close.scripts.OnClick()
 Eq(mp.shown, false, "the X closes the missing panel")
 Eq(pfUITrades_DB.missingOpen, nil, "and forgets it was open")

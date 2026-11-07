@@ -5,7 +5,12 @@ pfUI:RegisterModule("trades", function()
   local M = pfUITrades
 
   local WIDTH, ROW = 320, 18
-  local TASK_ROWS, MATERIAL_ROWS = 8, 10
+  local TASK_ROWS = 8
+  local MAX_ROWS = 30 -- rows made per list; as many as fit beside the window are shown
+  -- Inside a panel, a pane is 5 in from its edges and its list 5 in from the pane's, with room
+  -- for the scroll bar on the right, as pfUI's skin lays out the window's own panes.
+  local PANE_X, LIST_X, BAR_ROOM = 5, 10, 26
+  local INNER = WIDTH - LIST_X - BAR_ROOM - 2 * PANE_X
   local COLUMNS = { "need", "bags", "bank", "mail", "alts" }
   local COLUMN_WIDTH = 30
 
@@ -53,7 +58,7 @@ pfUI:RegisterModule("trades", function()
 
   local function Scroller(name, rows, update)
     local scroll = CreateFrame("ScrollFrame", name, panel, "FauxScrollFrameTemplate")
-    scroll:SetWidth(WIDTH - 32)
+    scroll:SetWidth(INNER)
     scroll:SetHeight(rows * ROW)
     FauxScrollFrame_SetOffset(scroll, 0) -- nil until first scrolled, otherwise
     scroll:SetScript("OnVerticalScroll", function()
@@ -64,15 +69,49 @@ pfUI:RegisterModule("trades", function()
   end
 
   -- A darker pane behind a list, as pfUI's skin puts behind the profession window's recipe list
-  -- and details: a second backdrop over the panel's, from top's top left to bottom's bottom
-  -- right, with room for the scroll bar.
-  local function Pane(parent, top, bottom)
+  -- and details: a second backdrop over the panel's. pane:Span(top, bottom) sets it from top
+  -- down to bottom, both measured down from the panel's top.
+  local function Pane(parent)
     local pane = CreateFrame("Frame", nil, parent)
     CreateBackdrop(pane, nil, nil, .75)
-    pane.backdrop:SetPoint("TOPLEFT", top, "TOPLEFT", -5, 5)
-    pane.backdrop:SetPoint("BOTTOMRIGHT", bottom, "BOTTOMRIGHT", 26, -5)
+    function pane:Span(top, bottom)
+      self.backdrop:ClearAllPoints()
+      self.backdrop:SetPoint("TOPLEFT", parent, "TOPLEFT", PANE_X, top)
+      self.backdrop:SetPoint("BOTTOMRIGHT", parent, "TOPRIGHT", -PANE_X, bottom)
+    end
     return pane
   end
+
+  -- Where the window's own parts are, measured down from its top edge: the middle of its title
+  -- and of its rank bar, the top of the recipe details pane, the bottom of the recipe list pane,
+  -- and where the frame ends below the Exit button. pfUI's skin moves them, so they are read
+  -- from the window rather than assumed; nil until the window has been laid out.
+  local function Guides()
+    local frame = _G[M.windows[ctx].frame]
+    local top = frame and frame:GetTop()
+    if not top then return nil end
+    local function Box(name)
+      local f = _G[name]
+      if f and type(f.backdrop) == "table" then return f.backdrop end
+      return f
+    end
+    local function Top(f) local y = f and f:GetTop() return y and (y - top) end
+    local function Bottom(f) local y = f and f:GetBottom() return y and (y - top) end
+    local function Middle(f) local t, b = Top(f), Bottom(f) return t and b and (t + b) / 2 end
+    local g = {
+      title = Middle(_G[ctx .. "FrameTitleText"]),
+      bar = Middle(_G[ctx .. "RankFrame"]),
+      top = Top(Box(ctx .. "DetailScrollFrame")) or Top(Box(ctx .. "ListScrollFrame")),
+      bottom = Bottom(Box(ctx .. "ListScrollFrame")),
+      frame = Bottom(_G[ctx .. "CancelButton"]),
+    }
+    if not (g.title and g.bar and g.top and g.bottom) then return nil end
+    g.frame = g.frame and (g.frame - 7) or Bottom(frame)
+    return g
+  end
+
+  -- the same, for a panel 440 tall when the window can't be measured
+  local FALLBACK = { title = -14, bar = -38, top = -49, bottom = -431, frame = -440 }
 
   -- pfUI's red close button in a panel's top right corner; onClick closes it the way its toggle does
   local function CloseButton(parent, onClick)
@@ -120,11 +159,11 @@ pfUI:RegisterModule("trades", function()
 
   local function DrawMaterials()
     local materials = plan.materials
-    FauxScrollFrame_Update(panel.materialScroll, table.getn(materials), MATERIAL_ROWS, ROW)
+    FauxScrollFrame_Update(panel.materialScroll, table.getn(materials), panel.materialVisible, ROW)
     local offset = FauxScrollFrame_GetOffset(panel.materialScroll)
 
     for r, row in ipairs(panel.materialRows) do
-      local material = materials[r + offset]
+      local material = r <= panel.materialVisible and materials[r + offset]
       row.material = material
       if material then
         local color = STATUS[material.status]
@@ -176,10 +215,17 @@ pfUI:RegisterModule("trades", function()
     end
 
     local x = edge - frame:GetRight() + 2
-    if x ~= p.x then
-      p.x = x
+    local g = Guides() or FALLBACK
+    -- the panel spans the window's frame, and its parts line up with the window's
+    local topY = skinned and 0 or -10
+    local key = x .. ":" .. g.title .. ":" .. g.bar .. ":" .. g.top .. ":" .. g.bottom .. ":" .. g.frame
+    if key ~= p.layoutKey then
+      p.layoutKey, p.x = key, x
       p:ClearAllPoints()
-      p:SetPoint("TOPLEFT", frame, "TOPRIGHT", x, skinned and 0 or -10)
+      p:SetPoint("TOPLEFT", frame, "TOPRIGHT", x, topY)
+      p:SetPoint("BOTTOMLEFT", frame, "TOPRIGHT", x, g.frame)
+      -- the guides are measured from the window's top, the panel's parts from the panel's
+      p.Layout({ title = g.title - topY, bar = g.bar - topY, top = g.top - topY, bottom = g.bottom - topY })
     end
   end
 
@@ -246,7 +292,7 @@ pfUI:RegisterModule("trades", function()
 
   local function CreateTaskRow(i)
     local row = CreateFrame("Button", nil, panel)
-    row:SetWidth(WIDTH - 32)
+    row:SetWidth(INNER)
     row:SetHeight(ROW)
     row:SetPoint("TOPLEFT", panel.taskScroll, "TOPLEFT", 0, -(i - 1) * ROW)
     row:SetScript("OnClick", function() M.SelectTask(ctx, this.task) end)
@@ -290,7 +336,7 @@ pfUI:RegisterModule("trades", function()
 
   local function CreateMaterialRow(i)
     local row = CreateFrame("Button", nil, panel)
-    row:SetWidth(WIDTH - 32)
+    row:SetWidth(INNER)
     row:SetHeight(ROW)
     row:SetPoint("TOPLEFT", panel.materialScroll, "TOPLEFT", 0, -(i - 1) * ROW)
     row:SetScript("OnEnter", RowTooltip)
@@ -338,7 +384,6 @@ pfUI:RegisterModule("trades", function()
     end)
 
     panel.title = Font(panel, "CENTER")
-    panel.title:SetPoint("TOP", 0, -10)
     panel.close = CloseButton(panel, function() SetPanelShown(false) end)
 
     panel.add = Button(panel, T["Add"], 70, 20, function()
@@ -348,7 +393,7 @@ pfUI:RegisterModule("trades", function()
       end
       M.AddSelected(ctx, count)
     end)
-    panel.add:SetPoint("TOPLEFT", 8, -28)
+
 
     panel.start = Button(panel, T["Start"], 70, 20, function()
       if M.running then M.Stop() else M.Start(ctx) end
@@ -356,10 +401,9 @@ pfUI:RegisterModule("trades", function()
     panel.start:SetPoint("LEFT", panel.add, "RIGHT", 4, 0)
 
     panel.clear = Button(panel, T["Clear"], 70, 20, function() M.Clear(Profession()) end)
-    panel.clear:SetPoint("TOPRIGHT", -8, -28)
+
 
     panel.taskScroll = Scroller("pfUITradesTaskScroll", TASK_ROWS, Refresh)
-    panel.taskScroll:SetPoint("TOPLEFT", 8, -54)
 
     panel.empty = Font(panel.taskScroll) -- on the list, above its pane
     panel.empty:SetPoint("TOPLEFT", panel.taskScroll, "TOPLEFT", 2, -4)
@@ -368,9 +412,9 @@ pfUI:RegisterModule("trades", function()
     for i = 1, TASK_ROWS do panel.taskRows[i] = CreateTaskRow(i) end
 
     local header = CreateFrame("Frame", nil, panel)
-    header:SetWidth(WIDTH - 32)
+    header:SetWidth(INNER)
     header:SetHeight(ROW)
-    header:SetPoint("TOPLEFT", panel.taskScroll, "BOTTOMLEFT", 0, -8)
+
 
     local label = Font(header)
     label:SetPoint("LEFT", 2, 0)
@@ -383,18 +427,46 @@ pfUI:RegisterModule("trades", function()
       column:SetTextColor(.7, .7, .7)
     end
 
-    panel.materialScroll = Scroller("pfUITradesMaterialScroll", MATERIAL_ROWS, Refresh)
+    panel.materialScroll = Scroller("pfUITradesMaterialScroll", MAX_ROWS, Refresh)
     panel.materialScroll:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
 
     panel.materialRows = {}
-    for i = 1, MATERIAL_ROWS do panel.materialRows[i] = CreateMaterialRow(i) end
+    for i = 1, MAX_ROWS do panel.materialRows[i] = CreateMaterialRow(i) end
 
-    Pane(panel, panel.taskScroll, panel.taskScroll)
-    Pane(panel, header, panel.materialScroll)
-
-    panel.source = Font(panel)
-    panel.source:SetPoint("BOTTOMLEFT", 10, 10)
+    local taskPane, materialPane = Pane(panel), Pane(panel)
+    panel.source = Font(materialPane) -- the last line of the materials pane
     panel.source:SetTextColor(.7, .7, .7)
+    panel.materialVisible = 10
+
+    -- y values measured down from the panel's top (see PlaceBeside)
+    function panel.Layout(y)
+      panel.title:ClearAllPoints()
+      panel.title:SetPoint("CENTER", panel, "TOP", 0, y.title)
+      panel.add:ClearAllPoints()
+      panel.add:SetPoint("LEFT", panel, "TOPLEFT", LIST_X - 2, y.bar)
+      panel.clear:ClearAllPoints()
+      panel.clear:SetPoint("RIGHT", panel, "TOPRIGHT", -(LIST_X - 2), y.bar)
+
+      -- the tasks from the top of the window's details pane, the materials under them down to
+      -- the bottom of its recipe list
+      local taskBottom = y.top - TASK_ROWS * ROW - 2 * PANE_X
+      taskPane:Span(y.top, taskBottom)
+      panel.taskScroll:ClearAllPoints()
+      panel.taskScroll:SetPoint("TOPLEFT", panel, "TOPLEFT", LIST_X, y.top - PANE_X)
+
+      local materialTop = taskBottom - 8
+      materialPane:Span(materialTop, y.bottom)
+      header:ClearAllPoints()
+      header:SetPoint("TOPLEFT", panel, "TOPLEFT", LIST_X, materialTop - PANE_X)
+      panel.source:ClearAllPoints()
+      panel.source:SetPoint("BOTTOMLEFT", panel, "TOPLEFT", LIST_X + 2, y.bottom + PANE_X + 2)
+      -- what is left between the header and the source line
+      local room = (materialTop - PANE_X - ROW) - (y.bottom + PANE_X + ROW)
+      panel.materialVisible = math.max(1, math.min(MAX_ROWS, math.floor(room / ROW)))
+      panel.materialScroll:SetHeight(panel.materialVisible * ROW)
+      Refresh()
+    end
+    panel.Layout(FALLBACK)
   end
 
   -- Moves a frame and everything in it up, keeping their order among themselves.
@@ -428,11 +500,8 @@ pfUI:RegisterModule("trades", function()
   -- its vendors, mobs and chests and their zones, and a click shows them on the map.
 
   M.T = T
-  -- the panel is as tall as the queue panel; the list starts under the button and ends a
-  -- margin above the bottom, and is narrow enough for its scroll bar to stay inside
-  local MISSING_HEIGHT, MISSING_TOP, MISSING_BOTTOM = 440, 54, 14
-  local MISSING_ROWS = math.floor((MISSING_HEIGHT - MISSING_TOP - MISSING_BOTTOM) / ROW)
-  local MISSING_WIDTH = WIDTH - 36
+  -- the list's width and how many of its rows fit come from the panes (see PlaceBeside)
+  local MISSING_WIDTH = INNER
   local missingList, missingShown, missingRank = {}, {}, 0
   local learnableOnly
 
@@ -522,10 +591,11 @@ pfUI:RegisterModule("trades", function()
   local function DrawMissing()
     if not missing or not missing:IsVisible() then return end
     local total = table.getn(missingShown)
-    FauxScrollFrame_Update(missing.scroll, total, MISSING_ROWS, ROW)
+    FauxScrollFrame_Update(missing.scroll, total, missing.visible, ROW)
     local offset = FauxScrollFrame_GetOffset(missing.scroll)
-    for i = 1, MISSING_ROWS do
-      local row, m = missing.rows[i], missingShown[offset + i]
+    for i = 1, MAX_ROWS do
+      local row = missing.rows[i]
+      local m = i <= missing.visible and missingShown[offset + i]
       row.entry = m
       if m then
         row.skill:SetText((m.skill <= missingRank and "|cff00ff00" or "|cffff5555") .. m.skill)
@@ -583,7 +653,7 @@ pfUI:RegisterModule("trades", function()
   local function CreateMissingPanel()
     missing = CreateFrame("Frame", "pfUITradesMissingPanel", UIParent)
     missing:SetWidth(WIDTH)
-    missing:SetHeight(MISSING_HEIGHT)
+
     missing:EnableMouse(true)
     CreateBackdrop(missing, nil, nil, .75)
     CreateBackdropShadow(missing)
@@ -599,19 +669,17 @@ pfUI:RegisterModule("trades", function()
     end)
 
     missing.title = Font(missing, "CENTER")
-    missing.title:SetPoint("TOP", 0, -10)
+
     missing.close = CloseButton(missing, function() SetMissingShown(false) end)
 
     missing.only = Button(missing, T["Learnable now"], 100, 20, function()
       learnableOnly = not learnableOnly
       RefreshMissing()
     end)
-    missing.only:SetPoint("TOPLEFT", 8, -28)
+
 
     missing.scroll = CreateFrame("ScrollFrame", "pfUITradesMissingScroll", missing, "FauxScrollFrameTemplate")
     missing.scroll:SetWidth(MISSING_WIDTH)
-    missing.scroll:SetHeight(MISSING_ROWS * ROW)
-    missing.scroll:SetPoint("TOPLEFT", 8, -MISSING_TOP)
     FauxScrollFrame_SetOffset(missing.scroll, 0)
     missing.scroll:SetScript("OnVerticalScroll", function()
       FauxScrollFrame_OnVerticalScroll(ROW, DrawMissing)
@@ -623,9 +691,26 @@ pfUI:RegisterModule("trades", function()
     missing.empty:SetTextColor(.7, .7, .7)
 
     missing.rows = {}
-    for i = 1, MISSING_ROWS do missing.rows[i] = CreateMissingRow(i) end
+    for i = 1, MAX_ROWS do missing.rows[i] = CreateMissingRow(i) end
 
-    Pane(missing, missing.scroll, missing.scroll)
+    local pane = Pane(missing)
+    missing.visible = 20
+
+    -- y values measured down from the panel's top (see PlaceBeside)
+    function missing.Layout(y)
+      missing.title:ClearAllPoints()
+      missing.title:SetPoint("CENTER", missing, "TOP", 0, y.title)
+      missing.only:ClearAllPoints()
+      missing.only:SetPoint("LEFT", missing, "TOPLEFT", LIST_X - 2, y.bar)
+      -- one pane from the top of the window's details pane to the bottom of its recipe list
+      pane:Span(y.top, y.bottom)
+      missing.scroll:ClearAllPoints()
+      missing.scroll:SetPoint("TOPLEFT", missing, "TOPLEFT", LIST_X, y.top - PANE_X)
+      missing.visible = math.max(1, math.min(MAX_ROWS, math.floor((y.top - y.bottom - 2 * PANE_X) / ROW)))
+      missing.scroll:SetHeight(missing.visible * ROW)
+      DrawMissing()
+    end
+    missing.Layout(FALLBACK)
   end
 
   function SetMissingShown(shown)
