@@ -9,4 +9,6 @@
 ## SavedVariablesPerCharacter: pfUITrades_DB
 
 core.lua
+recipes.lua
+recipes-locale.lua
 ui.lua

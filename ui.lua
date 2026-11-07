@@ -130,11 +130,14 @@ pfUI:RegisterModule("trades", function()
     end
   end
 
-  -- Sits right of the window and of anything else hanging off its edge, like Atlas-CFM's
-  -- profession tabs or the Gromissingcrafts panel. Without pfUI's skin the frame is wider than
-  -- its art, so there the Exit button shows where the art ends.
-  local function Place()
-    local frame = panel:GetParent()
+  local missing -- the Missing Recipes panel, made when first opened
+
+  -- Puts p right of the window and of anything else hanging off its edge, like Atlas-CFM's
+  -- profession tabs. ignore is left out of that, so the queue panel stays next to the window
+  -- and the missing panel goes beyond it. Without pfUI's skin the frame is wider than its art,
+  -- so there the Exit button shows where the art ends.
+  local function PlaceBeside(p, ignore)
+    local frame = p:GetParent()
     local skinned = frame.backdrop ~= nil
     local edge = frame:GetRight()
     if not edge then return end
@@ -144,22 +147,22 @@ pfUI:RegisterModule("trades", function()
       edge = exit and exit:GetRight() or edge
     end
 
-    local children = { frame:GetChildren() }
-    if GromissingcraftsWindow then table.insert(children, GromissingcraftsWindow) end
-    for _, child in ipairs(children) do
-      if child ~= panel and child:IsVisible() then
+    for _, child in ipairs({ frame:GetChildren() }) do
+      if child ~= p and child ~= ignore and child:IsVisible() then
         local right = child:GetRight()
         if right and right > edge then edge = right end
       end
     end
 
     local x = edge - frame:GetRight() + 2
-    if x ~= panel.x then
-      panel.x = x
-      panel:ClearAllPoints()
-      panel:SetPoint("TOPLEFT", frame, "TOPRIGHT", x, skinned and 0 or -10)
+    if x ~= p.x then
+      p.x = x
+      p:ClearAllPoints()
+      p:SetPoint("TOPLEFT", frame, "TOPRIGHT", x, skinned and 0 or -10)
     end
   end
+
+  local function Place() PlaceBeside(panel, missing) end
 
   local function Refresh()
     if not panel or not panel:IsVisible() then return end
@@ -394,6 +397,230 @@ pfUI:RegisterModule("trades", function()
     Refresh()
   end
 
+  -- [ Missing recipes ]
+  -- The recipes of the open profession the character doesn't know (core.lua's M.Missing),
+  -- with where each is learned or found. With pfQuest loaded, the recipe item's tooltip names
+  -- its vendors, mobs and chests and their zones, and a click shows them on the map.
+
+  M.T = T
+  local MISSING_ROWS = 22
+  local missingList, missingShown, missingRank = {}, {}, 0
+  local learnableOnly
+
+  local function MissingRowTooltip()
+    local m = this.entry
+    if not m then return end
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetText(m.name)
+    GameTooltip:AddLine(T["Skill"] .. ": " .. m.skill, .8, .8, .8)
+    if m.level then GameTooltip:AddLine(string.format(T["Requires level %d"], m.level), .8, .8, .8) end
+    if m.how ~= "" then GameTooltip:AddLine(m.how, .2, 1, .8, true) end
+    local reagents = M.ParseReagents(m.reagents)
+    if table.getn(reagents) > 0 then
+      GameTooltip:AddLine(" ")
+      GameTooltip:AddLine(T["Reagents"] .. ":", 1, 1, 1)
+      for _, r in ipairs(reagents) do
+        local name = (C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(r[1])) or GetItemInfo(r[1]) or ("item:" .. r[1])
+        GameTooltip:AddLine(r[2] .. " x " .. name, .8, .8, .8)
+      end
+    end
+    GameTooltip:Show()
+  end
+
+  -- the recipe item: its tooltip, where it comes from, and a click to map that
+  local function RecipeTooltip()
+    local r = this.recipe
+    if not r then return end
+    GameTooltip:SetOwner(this, "ANCHOR_RIGHT")
+    GameTooltip:SetHyperlink("item:" .. r.id .. ":0:0:0")
+    GameTooltip:AddLine(" ")
+    if not M.AddItemSources(GameTooltip, r.id) then
+      GameTooltip:AddLine(r.sources, .2, 1, .8, true)
+    end
+    if M.HasItemSources() then GameTooltip:AddLine(T["Click to show on the map"], .2, 1, .8) end
+    GameTooltip:Show()
+  end
+
+  local function RecipeClick()
+    local r = this.recipe
+    if not r then return end
+    if IsShiftKeyDown() and ChatFrameEditBox and ChatFrameEditBox:IsVisible() then
+      local _, link = GetItemInfo(r.id)
+      if link then ChatFrameEditBox:Insert(link) end
+    elseif not M.ShowItemOnMap(r.id) and M.HasItemSources() then
+      M.Say(T["pfQuest knows no place for this recipe"])
+    end
+  end
+
+  local function CreateMissingRow(i)
+    local row = CreateFrame("Button", nil, missing)
+    row:SetWidth(WIDTH - 32)
+    row:SetHeight(ROW)
+    row:SetPoint("TOPLEFT", missing.scroll, "TOPLEFT", 0, -(i - 1) * ROW)
+    row:SetScript("OnEnter", MissingRowTooltip)
+    row:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+
+    row.skill = Font(row, "RIGHT")
+    row.skill:SetWidth(28)
+    row.skill:SetPoint("LEFT", 0, 0)
+
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetWidth(ROW - 4)
+    row.icon:SetHeight(ROW - 4)
+    row.icon:SetPoint("LEFT", row.skill, "RIGHT", 4, 0)
+    row.icon:SetTexCoord(.08, .92, .08, .92)
+
+    row.recipe = CreateFrame("Button", nil, row)
+    row.recipe:SetWidth(ROW - 2)
+    row.recipe:SetHeight(ROW - 2)
+    row.recipe:SetPoint("RIGHT", -2, 0)
+    row.recipe.icon = row.recipe:CreateTexture(nil, "ARTWORK")
+    row.recipe.icon:SetAllPoints(row.recipe)
+    row.recipe.icon:SetTexCoord(.08, .92, .08, .92)
+    CreateBackdrop(row.recipe)
+    row.recipe:SetScript("OnEnter", RecipeTooltip)
+    row.recipe:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row.recipe:SetScript("OnClick", RecipeClick)
+
+    row.name = Font(row)
+    row.name:SetHeight(ROW)
+    row.name:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
+    row.name:SetPoint("RIGHT", row.recipe, "LEFT", -4, 0)
+    return row
+  end
+
+  local function DrawMissing()
+    if not missing or not missing:IsVisible() then return end
+    local total = table.getn(missingShown)
+    FauxScrollFrame_Update(missing.scroll, total, MISSING_ROWS, ROW)
+    local offset = FauxScrollFrame_GetOffset(missing.scroll)
+    for i = 1, MISSING_ROWS do
+      local row, m = missing.rows[i], missingShown[offset + i]
+      row.entry = m
+      if m then
+        row.skill:SetText((m.skill <= missingRank and "|cff00ff00" or "|cffff5555") .. m.skill)
+        local _, _, quality, _, _, _, _, _, icon = GetItemInfo(m.item or 0)
+        row.icon:SetTexture(icon or (m.item and C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(m.item))
+          or "Interface\\Icons\\Trade_Engraving")
+        local hex = "|cffffffff"
+        if quality then
+          local _, _, _, h = GetItemQualityColor(quality)
+          hex = h or hex
+        end
+        row.name:SetText(hex .. m.name)
+        local r = m.recipes[1]
+        row.recipe.recipe = r
+        if r then
+          local _, _, _, _, _, _, _, _, ricon = GetItemInfo(r.id)
+          row.recipe.icon:SetTexture(ricon or (C_Item and C_Item.GetItemIconByID and C_Item.GetItemIconByID(r.id))
+            or "Interface\\Icons\\INV_Misc_QuestionMark")
+          row.recipe:Show()
+        else
+          row.recipe:Hide()
+        end
+        row:Show()
+      else
+        row:Hide()
+      end
+    end
+    missing.empty:SetText(total == 0 and (table.getn(missingList) == 0 and T["Every recipe is known."]
+      or T["Nothing more to learn at this skill."]) or "")
+  end
+
+  -- reads the window again and redraws
+  local function RefreshMissing()
+    if not missing or not missing:IsVisible() then return end
+    local list, total, rank = M.Missing(ctx)
+    missingList, missingRank = list or {}, rank or 0
+    missingShown = missingList
+    if learnableOnly then
+      missingShown = {}
+      for _, m in ipairs(missingList) do
+        if m.skill <= missingRank then table.insert(missingShown, m) end
+      end
+    end
+    if list then
+      missing.title:SetText(string.format(T["Missing Recipes: %d of %d"], table.getn(list), total))
+    else
+      missing.title:SetText(T["Missing Recipes"])
+      missing.empty:SetText(T["No recipe list for this profession."])
+    end
+    missing.only:SetText(learnableOnly and T["All recipes"] or T["Learnable now"])
+    FauxScrollFrame_SetOffset(missing.scroll, 0)
+    DrawMissing()
+  end
+
+  local function CreateMissingPanel()
+    missing = CreateFrame("Frame", "pfUITradesMissingPanel", UIParent)
+    missing:SetWidth(WIDTH)
+    missing:SetHeight(440)
+    missing:EnableMouse(true)
+    CreateBackdrop(missing, nil, nil, .75)
+    CreateBackdropShadow(missing)
+    missing:Hide()
+
+    missing.elapsed = 0
+    missing:SetScript("OnUpdate", function()
+      this.elapsed = this.elapsed + arg1
+      if this.elapsed > .25 then
+        this.elapsed = 0
+        PlaceBeside(missing)
+      end
+    end)
+
+    missing.title = Font(missing, "CENTER")
+    missing.title:SetPoint("TOP", 0, -10)
+
+    missing.only = Button(missing, T["Learnable now"], 100, 20, function()
+      learnableOnly = not learnableOnly
+      RefreshMissing()
+    end)
+    missing.only:SetPoint("TOPLEFT", 8, -28)
+
+    missing.scroll = CreateFrame("ScrollFrame", "pfUITradesMissingScroll", missing, "FauxScrollFrameTemplate")
+    missing.scroll:SetWidth(WIDTH - 32)
+    missing.scroll:SetHeight(MISSING_ROWS * ROW)
+    missing.scroll:SetPoint("TOPLEFT", 8, -54)
+    FauxScrollFrame_SetOffset(missing.scroll, 0)
+    missing.scroll:SetScript("OnVerticalScroll", function()
+      FauxScrollFrame_OnVerticalScroll(ROW, DrawMissing)
+    end)
+    SkinScrollbar(_G["pfUITradesMissingScrollScrollBar"])
+
+    missing.empty = Font(missing)
+    missing.empty:SetPoint("TOPLEFT", missing.scroll, "TOPLEFT", 2, -4)
+    missing.empty:SetTextColor(.7, .7, .7)
+
+    missing.rows = {}
+    for i = 1, MISSING_ROWS do missing.rows[i] = CreateMissingRow(i) end
+  end
+
+  local function SetMissingShown(shown)
+    M.DB().missingOpen = shown and 1 or nil
+    if not shown then
+      if missing then missing:Hide() end
+      return
+    end
+    if not missing then CreateMissingPanel() end
+    local frame = _G[M.windows[ctx].frame]
+    missing:SetParent(frame)
+    Raise(missing, frame:GetFrameLevel() + 10 - missing:GetFrameLevel())
+    missing.x = nil
+    missing:Show()
+    PlaceBeside(missing)
+    RefreshMissing()
+  end
+
+  -- a recipe learned while the window is open: "You have learned how to create a new item: %s."
+  local learned = ERR_LEARN_RECIPE_S and ("^" .. string.gsub(string.gsub(ERR_LEARN_RECIPE_S,
+    "([%.%(%)%-%+%*%?%[%]%^%$])", "%%%1"), "%%s", ".+"))
+  local learnEvents = CreateFrame("Frame")
+  learnEvents:RegisterEvent("CHAT_MSG_SYSTEM")
+  learnEvents:SetScript("OnEvent", function()
+    if learned and arg1 and string.find(arg1, learned) then RefreshMissing() end
+  end)
+
   -- [ Window hooks ]
 
   -- Called when a window opens, and again when the profession in it changes.
@@ -402,13 +629,20 @@ pfUI:RegisterModule("trades", function()
     local toggle = toggles[name]
     if not M.windows[name].Profession() then
       toggle:Hide()
+      if toggles[name .. "Missing"] then toggles[name .. "Missing"]:Hide() end
       if panel then panel:Hide() end
+      if missing then missing:Hide() end
       return
     end
 
     toggle:Show()
     CountOnToggle()
     if M.DB().open then SetPanelShown(true) end
+    local missingToggle = toggles[name .. "Missing"]
+    if missingToggle then
+      if M.EnglishProfession(M.windows[name].Profession()) then missingToggle:Show() else missingToggle:Hide() end
+    end
+    if M.DB().missingOpen then SetMissingShown(true) end
   end
 
   local function Attach(name)
@@ -427,6 +661,14 @@ pfUI:RegisterModule("trades", function()
     toggle:SetPoint("BOTTOMLEFT", _G[name .. "DetailScrollFrame"], "BOTTOMLEFT", 8, 8)
     toggle:SetFrameLevel(frame:GetFrameLevel() + 5)
     toggles[name] = toggle
+
+    -- the recipes this character hasn't learned yet, beside the queue
+    local missingToggle = Button(frame, T["Missing"], 70, 22, function()
+      SetMissingShown(not (missing and missing:IsShown()))
+    end)
+    missingToggle:SetPoint("LEFT", toggle, "RIGHT", 4, 0)
+    missingToggle:SetFrameLevel(frame:GetFrameLevel() + 5)
+    toggles[name .. "Missing"] = missingToggle
 
     HookScript(frame, "OnShow", function() WindowShown(name) end)
     if frame:IsShown() then WindowShown(name) end

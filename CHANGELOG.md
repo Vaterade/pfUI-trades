@@ -6,6 +6,20 @@ the version in `pfUI-tradeskill.toc` into the GitHub release notes, so write it 
 Versions follow [semantic versioning](https://semver.org/): a fix raises the last number, a
 new feature the middle one. While the first number is 0 the addon isn't considered stable yet.
 
+## [Unreleased]
+
+### Added
+- **Missing**, next to **Queue**, opens a panel listing the recipes of the open profession you
+  haven't learned, with their skill level, how they're learned or where their recipe comes from,
+  and their reagents. **Learnable now** narrows it to what your rank allows.
+- With pfQuest loaded, a missing recipe's item names who sells or drops it and where, and a click
+  shows them on the map.
+- Other addons can queue crafts for any character on the realm (Altoholic's Recipes page does).
+
+### Changed
+- Renamed from pfUI-trades to pfUI-tradeskill. Rename `pfUI-trades.lua` to `pfUI-tradeskill.lua` in
+  your `WTF` saved variables to keep your task lists.
+
 ## [0.1.0] - 2026-11-05
 
 The first release.

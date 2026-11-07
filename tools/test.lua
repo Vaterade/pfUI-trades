@@ -132,7 +132,10 @@ pfUI = {
 }
 pfUI_config = {}
 
+GetLocale = GetLocale or function() return "enUS" end
 dofile("core.lua")
+dofile("recipes.lua")
+dofile("recipes-locale.lua")
 dofile("ui.lua")
 
 local M = pfUITrades
@@ -698,6 +701,68 @@ Eq(panel.start.label, "Stop", "becomes Stop")
 panel.start.scripts.OnClick()
 Eq(M.running, nil, "Stop stops")
 
+-- [ Missing recipes ]
+-- the stub window is Blacksmithing with Smelt Copper (a Mining recipe) and Copper Blade
+local bs = table.getn(M.RecipeDB.Blacksmithing)
+local list, total, rank = M.Missing("TradeSkill")
+Eq(total, bs, "the list has every Blacksmithing recipe")
+Eq(table.getn(list), bs, "none of them is in the stub window")
+-- a known recipe by name, and one by spell ID through IsPlayerSpell
+fullList[3][1] = "Copper Mace"
+IsPlayerSpell = function(spell) return spell == 2660 end	-- Rough Sharpening Stone
+list = M.Missing("TradeSkill")
+local seen = {}
+for _, m in ipairs(list) do seen[m.name] = true end
+Eq(seen["Copper Mace"], nil, "a recipe in the window isn't missing")
+Eq(seen["Rough Sharpening Stone"], nil, "nor one IsPlayerSpell knows")
+Eq(table.getn(list), bs - 2, "the rest are")
+IsPlayerSpell = nil
+fullList[3][1] = "Copper Blade"
+
+-- with Altoholic loaded first, its copy of the list is used instead of a second one
+local ownDB = M.RecipeDB
+Altoholic = { RecipeDB = { Mining = {} }, L = { ["Smelt Tin"] = "Zinn verhütten" } }
+dofile("recipes.lua")
+dofile("recipes-locale.lua")
+Eq(M.RecipeDB, Altoholic.RecipeDB, "Altoholic's recipe list is shared")
+Eq(M.RecipeName("Smelt Tin"), "Zinn verhütten", "and its translations")
+M.RecipeDB, M.RecipeNamesFrom, Altoholic = ownDB, nil, nil
+
+-- where a recipe item comes from, with pfQuest's database
+Eq(M.HasItemSources(), false, "no sources without pfQuest")
+pfDB = {
+  items = { data = { [6053] = { V = { [10] = 1 }, U = { [20] = 2.5 } } } },
+  units = { data = { [10] = { coords = { { 50, 50, 1519, 0 } } }, [20] = { coords = { { 1, 1, 40, 0 } } } },
+    loc = { [10] = "Vendor Vic", [20] = "Mob Max" } },
+  objects = { data = {}, loc = {} }, refloot = { data = {} },
+  zones = { loc = { [1519] = "Stormwind City", [40] = "Westfall" } },
+}
+local src = M.ItemSources(6053)
+Eq(src and src.vendors[1].name .. " / " .. src.vendors[1].zone, "Vendor Vic / Stormwind City", "a vendor and its zone")
+Eq(src and src.drops[1].zone, "Westfall", "a drop's zone")
+local mapped
+pfDatabase = { SearchItemID = function(_, id) mapped = id return { [1519] = 1 } end, GetBestMap = function(_, m) return next(m) end }
+pfMap = { ShowMapID = function(_, map) mapped = mapped and map end, DeleteNode = function() end }
+Eq(M.ShowItemOnMap(6053) and mapped, 1519, "the item goes on pfQuest's map")
+pfDB, pfDatabase, pfMap = nil, nil, nil
+
+-- the panel
+GetItemInfo = function() end
+GetItemQualityColor = function() return 1, 1, 1, "|cffffffff" end
+pfUITradesButton2.scripts.OnClick()
+local mp = pfUITradesMissingPanel
+Eq(mp ~= nil and mp.shown, true, "the Missing button opens the missing panel")
+Eq(pfUITrades_DB.missingOpen, 1, "and that's remembered")
+Eq(rawget(mp.rows[1], "entry") ~= nil, true, "it lists the missing recipes")
+-- the stub window gives no rank, so nothing can be learned now
+mp.only.scripts.OnClick()
+Eq(rawget(mp.rows[1], "entry"), nil, "Learnable now narrows to what the rank allows")
+Eq(mp.empty.text, "Nothing more to learn at this skill.", "and says so")
+mp.only.scripts.OnClick()
+Eq(rawget(mp.rows[1], "entry") ~= nil, true, "All recipes lists them again")
+pfUITradesButton2.scripts.OnClick()
+Eq(mp.shown, false, "and closes again")
+
 this = panel.materialRows[1]
 this.scripts.OnEnter()
 panel.clear.scripts.OnClick()
@@ -707,11 +772,13 @@ Eq(panel.taskRows[1].shown, false, "rows hide")
 -- The Queue button sits at the bottom left of the recipe details
 Eq(pfUITradesButton1.point[1], "BOTTOMLEFT", "Queue button corner")
 Eq(pfUITradesButton1.point[2], TradeSkillDetailScrollFrame, "Queue button anchor")
-Eq(pfUITradesButton2.point[2], CraftDetailScrollFrame, "Queue button anchor on the craft window")
+-- buttons in order: the trade skill window's Queue and Missing, then the craft window's
+Eq(pfUITradesButton3.point[2], CraftDetailScrollFrame, "Queue button anchor on the craft window")
 
 -- Beast Training has no profession line, so no button or panel
 CraftFrame.scripts.OnShow()
-Eq(pfUITradesButton2.shown, false, "no Queue button on Beast Training")
+Eq(pfUITradesButton3.shown, false, "no Queue button on Beast Training")
+Eq(pfUITradesButton4.shown, false, "nor a Missing one")
 
 print(passed .. " passed, " .. failures .. " failed")
 os.exit(failures == 0 and 0 or 1)

@@ -237,6 +237,15 @@ function Craft.WithFullList(run)
   if not ok then error(failure, 0) end
 end
 
+-- a row's own spell ID, and the player's rank in the window's profession
+function TradeSkill.Spell(i)
+  local _, _, spell = string.find(GetTradeSkillRecipeLink(i) or "", "enchant:(%d+)")
+  return tonumber(spell)
+end
+function TradeSkill.Rank() local _, rank = GetTradeSkillLine() return rank or 0 end
+function Craft.Spell(i) return GetCraftSpellID and GetCraftSpellID(i) end
+function Craft.Rank() local _, rank = GetCraftDisplaySkillLine() return rank or 0 end
+
 M.windows = { TradeSkill = TradeSkill, Craft = Craft }
 
 local function FindRow(window, name)
@@ -875,3 +884,199 @@ driver:RegisterEvent("BANKFRAME_OPENED")
 driver:RegisterEvent("MAIL_SHOW")
 driver:RegisterEvent("TRADE_SKILL_CLOSE")
 driver:RegisterEvent("CRAFT_CLOSE")
+
+-- [ Missing recipes ]
+
+-- The recipes of the open window's profession that aren't in it, from recipes.lua (converted
+-- from LibCrafts-1.0, the list Gromissingcrafts used). A recipe counts as known when a row of
+-- the window has its spell ID or its name, every row included, or, for the player's own
+-- window, when ClassicAPI's IsPlayerSpell says so. Spell IDs from PLACEHOLDER up are stand-ins
+-- in the list (most of Survival's), so those recipes only match by name.
+local PLACEHOLDER = 900000
+local gmatch = string.gmatch or string.gfind	-- 5.1's name (ClassicAPI), or 5.0's
+
+-- what the ui translates; core has no pfUI environment, so it sets M.T
+local function T(text) return M.T and M.T[text] or text end
+
+-- a recipe's name in the client's language
+function M.RecipeName(english)
+  if M.RecipeNamesFrom then return M.RecipeNamesFrom[english] end
+  return M.RecipeNames and M.RecipeNames[english] or english
+end
+
+-- the client writes some of Turtle's names with a curly apostrophe, the list a straight one
+local function Key(name)
+  return (string.gsub(name or "", "\226\128\153", "'"))
+end
+
+function M.EnglishProfession(profession)
+  for english in pairs(M.RecipeDB or {}) do
+    if english == profession or M.RecipeName(english) == profession then return english end
+  end
+end
+
+local LEARNED = { a = "Learned automatically", q = "Quest", t = "Trainer", o = "World object" }
+local RECIPE = { c = "Chest", e = "Made by an engineer", d = "Drop", f = "Fishing", g = "Gift",
+  p = "Pickpocketing", q = "Quest", v = "Vendor" }
+
+local function Describe(letters, map)
+  local parts = {}
+  for letter in gmatch(letters or "", ".") do
+    if map[letter] then table.insert(parts, T(map[letter])) end
+  end
+  return table.concat(parts, ", ")
+end
+
+-- "itemID:count|..." as the list keeps them, as { { id, count }, ... }
+function M.ParseReagents(s)
+  local list = {}
+  for id, count in gmatch(s or "", "(%d+):(%d+)") do
+    table.insert(list, { tonumber(id), tonumber(count) })
+  end
+  return list
+end
+
+-- { { spell, name, skill, how, item, reagents, recipes = { { id, sources } }, level }, ... }
+-- by skill level, how many recipes the profession has, and the rank; nil when the list has
+-- nothing for the window's profession
+function M.Missing(ctx)
+  local window = M.windows[ctx]
+  local profession = window and window.Profession()
+  local english = profession and M.EnglishProfession(profession)
+  if not english then return nil end
+
+  local names, spells = {}, {}
+  window.WithFullList(function()
+    for i = 1, window.Count() do
+      local name, kind = window.Info(i)
+      if name and kind ~= "header" then
+        names[Key(name)] = true
+        local spell = window.Spell(i)
+        if spell then spells[spell] = true end
+      end
+    end
+  end)
+  -- a linked window is someone else's: IsPlayerSpell answers for the player
+  local own = not window.Linked() and IsPlayerSpell
+
+  local missing, all = {}, M.RecipeDB[english]
+  for _, craft in ipairs(all) do
+    local spell, name = craft[1], M.RecipeName(craft[2])
+    local known = spells[spell] or names[Key(name)] or names[Key(craft[2])]
+      or (own and spell < PLACEHOLDER and IsPlayerSpell(spell))
+    if not known then
+      local recipes, how = {}, {}
+      local learned = Describe(craft[4], LEARNED)
+      if learned ~= "" then table.insert(how, learned) end
+      for _, r in ipairs(craft[7] or {}) do
+        table.insert(recipes, { id = r[1], sources = Describe(r[2], RECIPE) })
+        table.insert(how, Describe(r[2], RECIPE))
+      end
+      table.insert(missing, { spell = spell, name = name, skill = craft[3], how = table.concat(how, "; "),
+        item = craft[5], reagents = craft[6], recipes = recipes, level = craft[8] })
+    end
+  end
+  return missing, table.getn(all), window.Rank()
+end
+
+-- [ Where an item comes from, with pfQuest ]
+-- Read from pfQuest's database when pfQuest is loaded (pfQuest-octo-plus fills it with
+-- OctoWoW's data): who sells the item, which mobs drop it, which objects hold it, and where.
+
+local function DB(kind)
+  local t = pfDB and pfDB[kind]
+  return t and t.data, t and t.loc
+end
+
+function M.HasItemSources()
+  return (DB("items")) ~= nil
+end
+
+local function Zones(data)
+  local _, zoneNames = DB("zones")
+  local seen, names = {}, {}
+  for _, coord in pairs(data and data.coords or {}) do
+    local zone = coord[3]
+    if zone and zone > 0 and not seen[zone] then
+      seen[zone] = true
+      local name = zoneNames and zoneNames[zone]
+      if not name and C_Map and C_Map.GetAreaInfo then name = C_Map.GetAreaInfo(zone) end
+      if name then table.insert(names, name) end
+    end
+  end
+  table.sort(names)
+  if table.getn(names) > 2 then return names[1] .. ", " .. names[2] .. ", ..." end
+  return table.concat(names, ", ")
+end
+
+-- { vendors, drops, objects }, each a list of { name, zone, value }, or nil
+function M.ItemSources(itemID)
+  local items = DB("items")
+  local item = items and items[itemID]
+  if not item then return nil end
+  local units, unitNames = DB("units")
+  local objects, objectNames = DB("objects")
+  local refloot = DB("refloot")
+  local out = { vendors = {}, drops = {}, objects = {} }
+
+  local function Unit(list, id, value)
+    local name = unitNames and unitNames[id]
+    if name then table.insert(list, { name = name, zone = Zones(units and units[id]), value = value }) end
+  end
+  local function Object(id, chance)
+    local name = objectNames and objectNames[id]
+    if name then table.insert(out.objects, { name = name, zone = Zones(objects and objects[id]), value = chance }) end
+  end
+
+  for id, count in pairs(item.V or {}) do Unit(out.vendors, id, count) end
+  for id, chance in pairs(item.U or {}) do Unit(out.drops, id, chance) end
+  for id, chance in pairs(item.O or {}) do Object(id, chance) end
+  for ref, chance in pairs(item.R or {}) do
+    local r = refloot and refloot[ref]
+    for id in pairs(r and r.U or {}) do Unit(out.drops, id, chance) end
+    for id in pairs(r and r.O or {}) do Object(id, chance) end
+  end
+
+  local function ByChance(a, b)
+    if (a.value or 0) ~= (b.value or 0) then return (a.value or 0) > (b.value or 0) end
+    return a.name < b.name
+  end
+  table.sort(out.vendors, function(a, b) return a.name < b.name end)
+  table.sort(out.drops, ByChance)
+  table.sort(out.objects, ByChance)
+  if table.getn(out.vendors) + table.getn(out.drops) + table.getn(out.objects) == 0 then return nil end
+  return out
+end
+
+-- adds at most `max` lines of sources (8 by default) to a tooltip; false when there are none
+function M.AddItemSources(tooltip, itemID, max)
+  local s = M.ItemSources(itemID)
+  if not s then return false end
+  max = max or 8
+  local shown = 0
+  local total = table.getn(s.vendors) + table.getn(s.drops) + table.getn(s.objects)
+  local function Line(left, right)
+    if shown >= max then return end
+    tooltip:AddDoubleLine(left, right, 1, 1, 1, .7, .7, .7)
+    shown = shown + 1
+  end
+  local function Chance(v) return v and v > 0 and string.format(" (%.1f%%)", v) or "" end
+  for _, v in ipairs(s.vendors) do Line("|cff33ffcc" .. T("Sold by") .. "|r " .. v.name, v.zone) end
+  for _, d in ipairs(s.drops) do Line("|cffffd200" .. T("Dropped by") .. "|r " .. d.name .. Chance(d.value), d.zone) end
+  for _, o in ipairs(s.objects) do Line("|cffffd200" .. T("Found in") .. "|r " .. o.name .. Chance(o.value), o.zone) end
+  if total > shown then tooltip:AddLine(string.format(T("and %d more"), total - shown), .6, .6, .6) end
+  return true
+end
+
+-- puts the item's sources on pfQuest's map, as pfQuest's own browser does; false without
+-- pfQuest or a known place
+function M.ShowItemOnMap(itemID)
+  if not (pfDatabase and pfDatabase.SearchItemID and pfMap and pfMap.ShowMapID) then return false end
+  if pfMap.DeleteNode then pfMap:DeleteNode("PFDB") end
+  local maps = pfDatabase:SearchItemID(itemID, { ["addon"] = "PFDB" })
+  local best = maps and pfDatabase:GetBestMap(maps)
+  if not best then return false end
+  pfMap.queue_update = GetTime()
+  pfMap:ShowMapID(best)
+  return true
+end

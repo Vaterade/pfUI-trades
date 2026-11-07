@@ -1,0 +1,210 @@
+-- Converts LibCrafts-1.0's recipe database (from Gromissingcrafts, or MissingCrafts) into
+-- pfUI-tradeskill's own tables, for the Missing Recipes panel:
+--   recipes.lua         pfUITrades.RecipeDB, every craft by English profession name
+--   recipes-locale.lua  the recipe and profession names in other client languages
+-- Altoholic carries the same data, converted by its own copy of this script; when it is
+-- loaded, recipes.lua uses Altoholic's tables instead of building a second set.
+--
+-- Run from the repo root with the LibCrafts folder:
+--   luajit tools/convert-libcrafts.lua <path to LibCrafts-1.0>
+--
+-- LibCrafts is MIT licensed: (c) 2024 Roman Kharitonov, Survival data (c) 2026 Grom.
+-- Turtle WoW's crafts (Jewelcrafting, Disguise, Survival and the additions to the others)
+-- are included, since OctoWoW is built on Turtle.
+
+local dir = assert(arg[1], "usage: luajit tools/convert-libcrafts.lua <LibCrafts-1.0 folder>")
+local LOCALES = { "frFR", "deDE", "zhTW", "zhCN" }	-- Altoholic's translations besides enUS
+
+-- *** load LibCrafts' own files against a stand-in for the library ***
+
+local crafts = {}			-- every craft, in file order
+local locales = {}			-- locale -> { english -> translation }
+local currentLocale = "enUS"
+
+local lib = {
+	env = { is_debug = false, is_turtle_wow = true, is_super_wow_loaded = false },
+	constants = {
+		qualities = { Poor = 101, Common = 102, Uncommon = 103, Rare = 104, Epic = 105, Legendary = 106 },
+		spell_sources = { LearnedAutomatically = 201, Quest = 202, Trainer = 203, WorldObject = 204 },
+		recipe_sources = { Chest = 301, CraftedByEngineer = 302, Drop = 303, Fishing = 304,
+			GiftedToReturningEngineers = 305, Pickpocketing = 306, Quest = 307, Vendor = 308 },
+	},
+}
+
+local Craft = {}
+Craft.__index = Craft
+function Craft:AddRecipe(id, quality, sources) table.insert(self.recipes, { id = id, quality = quality, sources = sources }) return self end
+function Craft:SetResult(id) self.result = id return self end
+function Craft:AddReagent(id, count) table.insert(self.reagents, { id, count }) return self end
+function Craft:SetMinCharacterLevel(level) self.level = level return self end
+function Craft:Save()
+	-- a later definition of the same spell replaces the earlier one, as in LibCrafts
+	for i, c in ipairs(crafts) do
+		if c.spell == self.spell then table.remove(crafts, i) break end
+	end
+	table.insert(crafts, self)
+end
+
+local Module = {}
+Module.__index = Module
+function Module:NewCraft(spell, name, skill, sources)
+	return setmetatable({ profession = self.profession, spell = spell, name = name, skill = skill,
+		sources = sources, recipes = {}, reagents = {} }, Craft)
+end
+function Module:GetStrings() return self.strings end
+
+function lib:RegisterProfessionModule(_, _, profession)
+	return setmetatable({ profession = profession }, Module)
+end
+function lib:RegisterLocaleModule(_, locale)
+	if locale ~= currentLocale then return nil end
+	locales[locale] = locales[locale] or {}
+	return setmetatable({ strings = locales[locale] }, Module)
+end
+
+LibCraftsGetLibrary = function() return lib end
+getglobal = function(name) return _G[name] end
+tinsert = table.insert
+
+local function Load(path)
+	local chunk = assert(loadfile(path))
+	chunk()
+end
+
+-- the profession files, in the order their XML lists them
+local function LoadXml(xmlPath, base)
+	local f = assert(io.open(xmlPath))
+	local xml = f:read("*a")
+	f:close()
+	for file in string.gmatch(xml, '<Script%s+file="([^"]+)"') do
+		Load(base .. "/" .. file:gsub("\\", "/"))
+	end
+	for file in string.gmatch(xml, '<Include%s+file="([^"]+)"') do
+		local path = base .. "/" .. file:gsub("\\", "/")
+		LoadXml(path, path:match("^(.*)/[^/]+$"))
+	end
+end
+LoadXml(dir .. "/Professions/Professions.xml", dir .. "/Professions")
+for _, locale in ipairs(LOCALES) do
+	currentLocale = locale
+	for _, kind in ipairs({ "Professions", "Spells" }) do
+		local path = dir .. "/Locales/" .. locale .. "-" .. kind .. ".lua"
+		local f = io.open(path)
+		if f then f:close() Load(path) end
+	end
+end
+
+-- *** write Items/Recipes.lua ***
+
+-- one letter per way of learning a craft or getting its recipe
+local SPELL_SOURCES = { [201] = "a", [202] = "q", [203] = "t", [204] = "o" }
+local RECIPE_SOURCES = { [301] = "c", [302] = "e", [303] = "d", [304] = "f", [305] = "g", [306] = "p", [307] = "q", [308] = "v" }
+
+local function Letters(list, map)
+	local s = ""
+	for _, v in ipairs(list or {}) do s = s .. assert(map[v], "unknown source " .. tostring(v)) end
+	return s
+end
+
+local function Quote(s)
+	return string.format("%q", s)
+end
+
+local byProfession, order = {}, {}
+for _, c in ipairs(crafts) do
+	if not byProfession[c.profession] then
+		byProfession[c.profession] = {}
+		table.insert(order, c.profession)
+	end
+	table.insert(byProfession[c.profession], c)
+end
+table.sort(order)
+
+local out = {}
+local function W(s) table.insert(out, s) end
+W("-- Every craft of every profession, for the Missing Recipes panel. Generated by")
+W("-- tools/convert-libcrafts.lua from LibCrafts-1.0 (MIT: (c) 2024 Roman Kharitonov,")
+W("-- Survival data (c) 2026 Grom, via Gromissingcrafts). Don't edit by hand: convert again.")
+W("--")
+W("-- pfUITrades.RecipeDB[English profession] = { craft, ... }, each craft")
+W("--   { spell, \"English name\", skill, \"how it's learned\", result item, reagents,")
+W("--     recipe items, character level }")
+W("-- how it's learned: a = automatically, q = quest, t = trainer, o = an object in the world")
+W("-- reagents: \"itemID:count|itemID:count\"")
+W("-- recipe items: { { itemID, \"sources\" }, ... } with sources c = chest, e = made by an")
+W("--   engineer, d = drop, f = fishing, g = gift, p = pickpocketing, q = quest, v = vendor")
+W("")
+W("-- Altoholic loads first and has the same list: use its copy rather than build a second.")
+W("if Altoholic and Altoholic.RecipeDB then")
+W("\tpfUITrades.RecipeDB, pfUITrades.RecipeNamesFrom = Altoholic.RecipeDB, Altoholic.L")
+W("\treturn")
+W("end")
+W("")
+W("pfUITrades.RecipeDB = {")
+local total = 0
+for _, profession in ipairs(order) do
+	local list = byProfession[profession]
+	table.sort(list, function(a, b)
+		if a.skill ~= b.skill then return a.skill < b.skill end
+		return a.name < b.name
+	end)
+	W("\t[" .. Quote(profession) .. "] = {")
+	for _, c in ipairs(list) do
+		local reagents = {}
+		for _, r in ipairs(c.reagents) do table.insert(reagents, r[1] .. ":" .. r[2]) end
+		local recipes = {}
+		for _, r in ipairs(c.recipes) do
+			table.insert(recipes, "{ " .. r.id .. ", " .. Quote(Letters(r.sources, RECIPE_SOURCES)) .. " }")
+		end
+		W(string.format("\t\t{ %d, %s, %d, %s, %s, %s, %s, %s },",
+			c.spell, Quote(c.name), c.skill, Quote(Letters(c.sources, SPELL_SOURCES)),
+			c.result and tostring(c.result) or "nil",
+			Quote(table.concat(reagents, "|")),
+			#recipes > 0 and ("{ " .. table.concat(recipes, ", ") .. " }") or "nil",
+			c.level and tostring(c.level) or "nil"))
+		total = total + 1
+	end
+	W("\t},")
+end
+W("}")
+local f = assert(io.open("recipes.lua", "w"))
+f:write(table.concat(out, "\n") .. "\n")
+f:close()
+
+-- *** write Locale/Recipes.lua ***
+
+local wanted = {}
+for _, c in ipairs(crafts) do wanted[c.name] = true end
+for _, p in ipairs(order) do wanted[p] = true end
+
+out = {}
+W("-- The recipe and profession names of recipes.lua in other client languages, generated by")
+W("-- tools/convert-libcrafts.lua from LibCrafts-1.0's translations. Keyed by the English name;")
+W("-- only the client's own language is built. Don't edit by hand: convert again.")
+W("")
+W("if pfUITrades.RecipeNamesFrom then return end	-- Altoholic's translations are in use")
+W("local locale = GetLocale()")
+for _, locale in ipairs(LOCALES) do
+	local strings = locales[locale] or {}
+	local keys = {}
+	for k, v in pairs(strings) do
+		if wanted[k] and type(v) == "string" and v ~= "" and v ~= k then table.insert(keys, k) end
+	end
+	table.sort(keys)
+	if #keys > 0 then
+		W("")
+		W("if locale == " .. Quote(locale) .. " then")
+		W("\tpfUITrades.RecipeNames = {")
+		for _, k in ipairs(keys) do
+			W("\t\t[" .. Quote(k) .. "] = " .. Quote(strings[k]) .. ",")
+		end
+		W("\t}")
+		W("end")
+	end
+end
+f = assert(io.open("recipes-locale.lua", "w"))
+f:write(table.concat(out, "\n") .. "\n")
+f:close()
+
+print(string.format("%d crafts in %d professions", total, #order))
+for _, p in ipairs(order) do print(string.format("  %-16s %d", p, #byProfession[p])) end

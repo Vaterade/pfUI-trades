@@ -25,6 +25,27 @@ Press **Queue** at the bottom left of the recipe details.
 Tasks count down whenever the recipe's craft succeeds, including from the window's own Create
 button. Each character has its own list per profession. A task's count is crafts, not items.
 
+## Missing recipes
+
+Press **Missing**, next to **Queue**, for the recipes of the open profession you haven't learned.
+It opens a panel beside the window (beside the task list, when that's open too).
+
+- Each recipe shows its skill level, green when you can learn it at your current rank, the item it
+  makes, and how it's learned (trainer, quest...) or where its recipe comes from (vendor, drop...).
+- Hover a recipe for its reagents and any level it needs.
+- **Learnable now** narrows the list to what your rank allows; press it again for all recipes.
+- With [pfQuest](https://github.com/brues-code/pfQuest) loaded, hovering the recipe item at the
+  right of a line names the vendors, mobs and chests it comes from and their zones, and clicking it
+  shows them on the world map. [pfQuest-octo-plus](https://github.com/Salahaja/pfQuest-octo-plus)
+  gives pfQuest OctoWoW's data. Shift-click links the recipe in chat.
+
+A recipe counts as known when it's in the window, by name or spell, or the game says you know it.
+Linked windows (another player's) count only what they list. This replaces the Gromissingcrafts
+addon, whose recipe list it uses: LibCrafts-1.0 by Roman Kharitonov, from
+[MissingCrafts](https://github.com/refaim/MissingCrafts), with Grom's Survival recipes (MIT, see
+`recipes-LICENSE.txt`), converted with `tools/convert-libcrafts.lua`. When Altoholic is loaded, its
+copy of the same list is used rather than a second one.
+
 ## Materials
 
 The table lists what the tasks still need: **Need**, **Bags**, **Bank**, **Mail** and **Alts**.
